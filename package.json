@@ -1,0 +1,60 @@
+{
+  "name": "soundroom",
+  "version": "0.3.0",
+  "private": true,
+  "description": "声间 · 简洁的个人桌面音乐播放器",
+  "main": "electron/main.cjs",
+  "author": "Soundroom",
+  "scripts": {
+    "dev": "node scripts/dev.cjs",
+    "build": "tsc --noEmit && vite build",
+    "start": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "smoke": "node scripts/smoke.cjs",
+    "pack": "npm run build && electron-builder --win dir",
+    "dist": "npm run build && electron-builder --win portable"
+  },
+  "dependencies": {
+    "music-metadata": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "45.2.1",
+    "electron-builder": "^26.0.12",
+    "playwright": "^1.51.0",
+    "prettier": "^3.5.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "lucide-react": "^0.468.0"
+  },
+  "build": {
+    "appId": "local.soundroom.player",
+    "productName": "声间",
+    "directories": {
+      "output": "release/0.3.0"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*",
+      "package.json",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "assets/icon.ico",
+      "signExecutable": false
+    },
+    "portable": {
+      "artifactName": "Soundroom-${version}-Windows.exe"
+    },
+    "compression": "store"
+  }
+}
