@@ -41,6 +41,7 @@ let store,
   quitting = false,
   lastPlayback = {},
   shortcuts = [],
+  activeCollection,
   saveTimer;
 const ownWindows = () => [main, mini].filter((w) => w && !w.isDestroyed());
 const broadcast = (channel, data) =>
@@ -365,6 +366,33 @@ else {
         "editPlaylist",
       ])
         register(method, (...args) => qq[method](...args));
+      register("collectionAll", async (kind, id, requestId) => {
+        if (typeof requestId !== "string" || requestId.length > 100)
+          throw new Error("歌单加载请求无效");
+        if (activeCollection) activeCollection.cancelled = true;
+        const job = { requestId, cancelled: false };
+        activeCollection = job;
+        try {
+          return await qq.collectionAll(
+            kind,
+            id,
+            (progress) => {
+              if (!job.cancelled && main && !main.isDestroyed())
+                main.webContents.send("soundroom:collection-progress", {
+                  requestId,
+                  ...progress,
+                });
+            },
+            () => job.cancelled,
+          );
+        } finally {
+          if (activeCollection === job) activeCollection = null;
+        }
+      });
+      register("cancelCollection", (requestId) => {
+        if (activeCollection?.requestId === requestId)
+          activeCollection.cancelled = true;
+      });
       register("playUrl", async (track) => {
         if (track?.source === "local") {
           const stored = store.local.find((t) => t.id === track.id);
@@ -392,7 +420,7 @@ else {
         if (
           !player ||
           !Array.isArray(player.queue) ||
-          player.queue.length > 5000
+          player.queue.length > 100000
         )
           throw new Error("队列无效");
         store.player = {

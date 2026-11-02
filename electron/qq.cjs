@@ -242,7 +242,47 @@ class QQProvider {
     };
   }
   async collection(kind, id, page = 0) {
-    page = Math.max(0, Math.floor(Number(page) || 0));
+    return this.collectionPage(
+      kind,
+      id,
+      Math.max(0, Math.floor(Number(page) || 0)) * 100,
+    );
+  }
+  async collectionAll(kind, id, onProgress, cancelled) {
+    const { loadCompleteCollection } = require("./collection-loader.cjs");
+    const initial = await this.auth(kind === "liked");
+    return loadCompleteCollection(
+      async (offset) => {
+        const current = await this.auth(kind === "liked");
+        if (initial.uin !== current.uin || initial.key !== current.key)
+          throw new Error("登录账号已变化，请重新加载歌单");
+        const result = await this.collectionPage(kind, id, offset);
+        const after = await this.auth(kind === "liked");
+        if (initial.uin !== after.uin || initial.key !== after.key)
+          throw new Error("登录账号已变化，请重新加载歌单");
+        return result;
+      },
+      onProgress,
+      cancelled,
+    );
+  }
+  async collectionPage(kind, id, offset = 0) {
+    offset = Math.max(0, Math.floor(Number(offset) || 0));
+    const pageInfo = (raw, rawTotal) => {
+      const known =
+        rawTotal !== undefined &&
+        rawTotal !== null &&
+        Number.isSafeInteger(Number(rawTotal)) &&
+        Number(rawTotal) >= 0 &&
+        (Number(rawTotal) > 0 || (offset === 0 && raw.length === 0));
+      const total = known ? Number(rawTotal) : raw.length;
+      return {
+        rawCount: raw.length,
+        total,
+        totalKnown: known,
+        hasMore: known ? offset + raw.length < total : raw.length === 100,
+      };
+    };
     if (kind === "playlist" || kind === "liked") {
       if (kind === "liked") await this.auth(true);
       else if (!/^\d+$/.test(String(id))) throw new Error("歌单编号无效");
@@ -250,7 +290,7 @@ class QQProvider {
         disstid: kind === "liked" ? 0 : Number(id),
         dirid: kind === "liked" ? 201 : 0,
         tag: true,
-        song_begin: page * 100,
+        song_begin: offset,
         song_num: 100,
         userinfo: true,
         orderlist: true,
@@ -264,8 +304,12 @@ class QQProvider {
         cover: httpUrl(info.picurl || info.picurl2) || tracks[0]?.cover || "",
         description: info.desc || "",
         tracks,
-        total: Number(info.songnum || data.total_song_num || tracks.length),
-        hasMore: data.songlist.length === 100,
+        ...pageInfo(
+          data.songlist,
+          Number(info.songnum) > 0
+            ? info.songnum
+            : (data.total_song_num ?? info.songnum),
+        ),
         dirId: Number(info.dirid || 0),
         owned: Number(info.owndir) === 1,
       };
@@ -275,7 +319,7 @@ class QQProvider {
       const data = await this.rpc(
         "music.musichallAlbum.AlbumSongList",
         "GetAlbumSongList",
-        { albumMid: id, albumID: 0, begin: page * 100, num: 100, order: 2 },
+        { albumMid: id, albumID: 0, begin: offset, num: 100, order: 2 },
       );
       const tracks = (data.songList || [])
         .map(normalizeTrack)
@@ -284,15 +328,14 @@ class QQProvider {
         name: tracks[0]?.album || "专辑",
         cover: tracks[0]?.cover || "",
         tracks,
-        total: Number(data.totalNum || tracks.length),
-        hasMore: tracks.length === 100,
+        ...pageInfo(data.songList || [], data.totalNum),
       };
     }
     if (kind === "artist") {
       const data = await this.rpc(
         "musichall.song_list_server",
         "GetSingerSongList",
-        { singerMid: id, order: 1, begin: page * 100, num: 100 },
+        { singerMid: id, order: 1, begin: offset, num: 100 },
       );
       const tracks = (data.songList || [])
         .map(normalizeTrack)
@@ -301,8 +344,7 @@ class QQProvider {
         name: tracks[0]?.artists.find((a) => a.id === id)?.name || "歌手",
         cover: `https://y.gtimg.cn/music/photo_new/T001R500x500M000${id}.jpg`,
         tracks,
-        total: Number(data.totalNum || tracks.length),
-        hasMore: tracks.length === 100,
+        ...pageInfo(data.songList || [], data.totalNum),
       };
     }
     throw new Error("页面类型无效");

@@ -45,6 +45,7 @@ import {
   X,
 } from "lucide-react";
 import { usePlayer } from "./player";
+import { useVirtualList } from "./useVirtualList";
 import type { Account, Collection, Library, Playlist, Track } from "./types";
 
 const api = window.soundroom;
@@ -148,6 +149,10 @@ function DesktopApp() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [loadingProgress, setLoadingProgress] = useState<{
+    loaded: number;
+    total: number | null;
+  } | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
   const [playerOpen, setPlayerOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -162,6 +167,11 @@ function DesktopApp() {
   const loadToken = useRef(0),
     accountToken = useRef(0);
   const lyricRef = useRef<HTMLDivElement>(null);
+  const activeCollectionRequest = useRef<string | null>(null);
+  const mainScrollRef = useRef<HTMLElement>(null),
+    trackTableRef = useRef<HTMLDivElement>(null);
+  const queueScrollRef = useRef<HTMLDivElement>(null),
+    queueRowsRef = useRef<HTMLDivElement>(null);
   const navigate = (next: Route) => {
     setHistory((h) => [...h.slice(-24), route]);
     setRoute(next);
@@ -202,10 +212,15 @@ function DesktopApp() {
         player.restore(null);
       });
     const a = api.subscribe("account", applyAccount),
-      b = api.subscribe("library", setLocal);
+      b = api.subscribe("library", setLocal),
+      c = api.subscribe("collection-progress", (progress) => {
+        if (progress.requestId === activeCollectionRequest.current)
+          setLoadingProgress(progress);
+      });
     return () => {
       a();
       b();
+      c();
     };
   }, []);
   useEffect(() => {
@@ -226,6 +241,12 @@ function DesktopApp() {
   const load = useCallback(
     async (append = false) => {
       const token = ++loadToken.current;
+      if (activeCollectionRequest.current)
+        void api
+          .cancelCollection(activeCollectionRequest.current)
+          .catch(() => {});
+      activeCollectionRequest.current = null;
+      setLoadingProgress(null);
       if (
         !["liked", "playlist", "album", "artist", "search"].includes(route.kind)
       ) {
@@ -248,13 +269,16 @@ function DesktopApp() {
         setPage(0);
       }
       try {
+        const requestId = `${token}:${Date.now()}`;
+        if (route.kind !== "search")
+          activeCollectionRequest.current = requestId;
         const result =
           route.kind === "search"
             ? {
                 name: route.name || "",
                 ...(await api.search(route.name || "", nextPage + 1)),
               }
-            : await api.collection(route.kind, route.id || "", nextPage);
+            : await api.collectionAll(route.kind, route.id || "", requestId);
         if (token !== loadToken.current) return;
         setCollection((previous) =>
           append && previous
@@ -280,22 +304,49 @@ function DesktopApp() {
       } catch (e) {
         if (token === loadToken.current) setError((e as Error).message);
       } finally {
-        if (token === loadToken.current) setBusy(false);
+        if (token === loadToken.current) {
+          setBusy(false);
+          setLoadingProgress(null);
+          activeCollectionRequest.current = null;
+        }
       }
     },
     [route, account.loggedIn, page],
   );
   useEffect(() => {
     void load();
+    return () => {
+      ++loadToken.current;
+      if (activeCollectionRequest.current)
+        void api
+          .cancelCollection(activeCollectionRequest.current)
+          .catch(() => {});
+      activeCollectionRequest.current = null;
+    };
   }, [route, account]);
   const tracks = route.kind === "local" ? local : collection?.tracks || [];
+  const trackWindow = useVirtualList(
+    tracks,
+    mainScrollRef,
+    trackTableRef,
+    `${route.kind}:${route.id}:${route.name}`,
+    65,
+    39,
+  );
+  const queueWindow = useVirtualList(
+    player.queue,
+    queueScrollRef,
+    queueRowsRef,
+    String(queueOpen),
+    54,
+  );
   useEffect(() => {
     if (!account.loggedIn) return;
     let cancelled = false;
     const epoch = accountToken.current;
     const mids = [
       ...new Set(
-        [...tracks, ...(player.current ? [player.current] : [])]
+        [...trackWindow.visible, ...(player.current ? [player.current] : [])]
           .filter(
             (t) => t.source === "qq" && t.mid && likes[t.mid] === undefined,
           )
@@ -318,7 +369,7 @@ function DesktopApp() {
     return () => {
       cancelled = true;
     };
-  }, [tracks, player.current, account]);
+  }, [trackWindow.visible, player.current, account]);
   useEffect(() => {
     lyricRef.current
       ?.querySelector(".lyric-line.current")
@@ -426,34 +477,8 @@ function DesktopApp() {
     }
   };
   const playAll = async () => {
-    if (!tracks.length) return;
-    let all = [...tracks];
-    if (
-      collection?.hasMore &&
-      ["liked", "playlist", "album", "artist"].includes(route.kind)
-    ) {
-      setBusy(true);
-      try {
-        let more = true,
-          nextPage = page + 1;
-        while (more && nextPage < 50) {
-          const result = await api.collection(
-            route.kind,
-            route.id || "",
-            nextPage++,
-          );
-          all.push(...result.tracks);
-          more = result.hasMore;
-        }
-        if (more) throw new Error("歌单超过 5000 首，请选择部分歌曲加入队列");
-      } catch (e) {
-        notify((e as Error).message);
-        setBusy(false);
-        return;
-      }
-      setBusy(false);
-    }
-    void player.play(all[0], all);
+    if (busy || !tracks.length) return;
+    void player.play(tracks[0], tracks);
   };
   const removeFromPlaylist = async (track: Track) => {
     setMenu(null);
@@ -487,7 +512,7 @@ function DesktopApp() {
 
   function renderTrackList() {
     return (
-      <div className="track-table">
+      <div className="track-table" ref={trackTableRef}>
         <div className="track-head">
           <span>#</span>
           <span>歌曲</span>
@@ -495,154 +520,165 @@ function DesktopApp() {
           <span>时长</span>
           <span />
         </div>
-        {tracks.map((track, index) => (
-          <div
-            className={`track-row ${current?.id === track.id ? "selected" : ""}`}
-            key={track.id}
-            onDoubleClick={() => void player.play(track, tracks)}
-          >
-            <button
-              className="track-index"
-              title={`播放 ${track.title}`}
-              onClick={() => void player.play(track, tracks)}
+        {trackWindow.before > 0 && (
+          <div aria-hidden="true" style={{ height: trackWindow.before }} />
+        )}
+        {trackWindow.visible.map((track, visibleIndex) => {
+          const index = trackWindow.start + visibleIndex;
+          return (
+            <div
+              className={`track-row ${current?.id === track.id ? "selected" : ""}`}
+              key={track.id}
+              onDoubleClick={() => void player.play(track, tracks)}
             >
-              {current?.id === track.id && player.playing ? (
-                <span className="equalizer">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              ) : (
-                <>
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <Play className="row-play" size={15} fill="currentColor" />
-                </>
-              )}
-            </button>
-            <div className="track-info">
-              <Cover track={track} />
-              <div>
-                <button
-                  className="track-title"
-                  onClick={() => void player.play(track, tracks)}
-                >
-                  {track.title}
-                </button>
-                <div className="track-subtitle">
-                  {track.source === "qq" && track.artists?.length
-                    ? track.artists.map((artist, i) => (
-                        <span key={artist.id || i}>
-                          {i > 0 && " / "}
-                          <button
-                            onClick={() =>
-                              navigate({
-                                kind: "artist",
-                                id: artist.id,
-                                name: artist.name,
-                              })
-                            }
-                          >
-                            {artist.name}
-                          </button>
-                        </span>
-                      ))
-                    : track.artist}
-                  {track.source === "local" && <small>本地</small>}
+              <button
+                className="track-index"
+                title={`播放 ${track.title}`}
+                onClick={() => void player.play(track, tracks)}
+              >
+                {current?.id === track.id && player.playing ? (
+                  <span className="equalizer">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                ) : (
+                  <>
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <Play className="row-play" size={15} fill="currentColor" />
+                  </>
+                )}
+              </button>
+              <div className="track-info">
+                <Cover track={track} />
+                <div>
+                  <button
+                    className="track-title"
+                    onClick={() => void player.play(track, tracks)}
+                  >
+                    {track.title}
+                  </button>
+                  <div className="track-subtitle">
+                    {track.source === "qq" && track.artists?.length
+                      ? track.artists.map((artist, i) => (
+                          <span key={artist.id || i}>
+                            {i > 0 && " / "}
+                            <button
+                              onClick={() =>
+                                navigate({
+                                  kind: "artist",
+                                  id: artist.id,
+                                  name: artist.name,
+                                })
+                              }
+                            >
+                              {artist.name}
+                            </button>
+                          </span>
+                        ))
+                      : track.artist}
+                    {track.source === "local" && <small>本地</small>}
+                  </div>
+                </div>
+              </div>
+              <button
+                className="album-link"
+                disabled={!track.albumMid}
+                onClick={() =>
+                  navigate({
+                    kind: "album",
+                    id: track.albumMid,
+                    name: track.album,
+                  })
+                }
+              >
+                {track.album}
+              </button>
+              <span className="track-time">{time(track.duration)}</span>
+              <div className="row-actions">
+                {track.source === "qq" && (
+                  <IconButton
+                    label={track.mid && likes[track.mid] ? "取消喜欢" : "喜欢"}
+                    active={!!(track.mid && likes[track.mid])}
+                    disabled={
+                      likeBusy !== null ||
+                      !account.loggedIn ||
+                      !track.mid ||
+                      likes[track.mid] === undefined
+                    }
+                    onClick={() => void doLike(track)}
+                  >
+                    <Heart
+                      size={16}
+                      fill={
+                        track.mid && likes[track.mid] ? "currentColor" : "none"
+                      }
+                    />
+                  </IconButton>
+                )}
+                <div className="menu-anchor">
+                  <IconButton
+                    label={`更多：${track.title}`}
+                    active={menu === track.id}
+                    onClick={() => setMenu(menu === track.id ? null : track.id)}
+                  >
+                    <MoreHorizontal size={18} />
+                  </IconButton>
+                  {menu === track.id && (
+                    <div className="popover">
+                      <button
+                        onClick={() => {
+                          player.setQueue((q) =>
+                            q.some((t) => t.id === track.id)
+                              ? q
+                              : [...q, track],
+                          );
+                          setMenu(null);
+                          notify("已加入播放队列");
+                        }}
+                      >
+                        <ListPlus size={15} />
+                        加入队列
+                      </button>
+                      {track.source === "qq" && account.loggedIn && (
+                        <button
+                          onClick={() => openDialog({ type: "add", track })}
+                        >
+                          <Plus size={15} />
+                          添加到歌单
+                        </button>
+                      )}
+                      {route.kind === "playlist" && collection?.owned && (
+                        <button onClick={() => void removeFromPlaylist(track)}>
+                          <Minus size={15} />
+                          从歌单移除
+                        </button>
+                      )}
+                      {track.source === "local" && (
+                        <button
+                          onClick={() => {
+                            void api
+                              .removeLocal(track.id)
+                              .then(setLocal)
+                              .catch((e) => notify(e.message));
+                            player.remove(track.id);
+                            setMenu(null);
+                          }}
+                        >
+                          <X size={15} />
+                          从曲库移除 · 保留文件
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-            <button
-              className="album-link"
-              disabled={!track.albumMid}
-              onClick={() =>
-                navigate({
-                  kind: "album",
-                  id: track.albumMid,
-                  name: track.album,
-                })
-              }
-            >
-              {track.album}
-            </button>
-            <span className="track-time">{time(track.duration)}</span>
-            <div className="row-actions">
-              {track.source === "qq" && (
-                <IconButton
-                  label={track.mid && likes[track.mid] ? "取消喜欢" : "喜欢"}
-                  active={!!(track.mid && likes[track.mid])}
-                  disabled={
-                    likeBusy !== null ||
-                    !account.loggedIn ||
-                    !track.mid ||
-                    likes[track.mid] === undefined
-                  }
-                  onClick={() => void doLike(track)}
-                >
-                  <Heart
-                    size={16}
-                    fill={
-                      track.mid && likes[track.mid] ? "currentColor" : "none"
-                    }
-                  />
-                </IconButton>
-              )}
-              <div className="menu-anchor">
-                <IconButton
-                  label={`更多：${track.title}`}
-                  active={menu === track.id}
-                  onClick={() => setMenu(menu === track.id ? null : track.id)}
-                >
-                  <MoreHorizontal size={18} />
-                </IconButton>
-                {menu === track.id && (
-                  <div className="popover">
-                    <button
-                      onClick={() => {
-                        player.setQueue((q) =>
-                          q.some((t) => t.id === track.id) ? q : [...q, track],
-                        );
-                        setMenu(null);
-                        notify("已加入播放队列");
-                      }}
-                    >
-                      <ListPlus size={15} />
-                      加入队列
-                    </button>
-                    {track.source === "qq" && account.loggedIn && (
-                      <button
-                        onClick={() => openDialog({ type: "add", track })}
-                      >
-                        <Plus size={15} />
-                        添加到歌单
-                      </button>
-                    )}
-                    {route.kind === "playlist" && collection?.owned && (
-                      <button onClick={() => void removeFromPlaylist(track)}>
-                        <Minus size={15} />
-                        从歌单移除
-                      </button>
-                    )}
-                    {track.source === "local" && (
-                      <button
-                        onClick={() => {
-                          void api
-                            .removeLocal(track.id)
-                            .then(setLocal)
-                            .catch((e) => notify(e.message));
-                          player.remove(track.id);
-                          setMenu(null);
-                        }}
-                      >
-                        <X size={15} />
-                        从曲库移除 · 保留文件
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
+        {trackWindow.after > 0 && (
+          <div aria-hidden="true" style={{ height: trackWindow.after }} />
+        )}
       </div>
     );
   }
@@ -880,6 +916,7 @@ function DesktopApp() {
         </header>
         <main
           className="main-content"
+          ref={mainScrollRef}
           key={`${route.kind}:${route.id}:${route.name}`}
         >
           <div className="page-heading">
@@ -1065,7 +1102,9 @@ function DesktopApp() {
                   <span>
                     {route.kind === "local"
                       ? `${local.length} 首音乐 · 文件保留在原位置`
-                      : `已载入 ${tracks.length} / ${collection?.total || tracks.length} 首`}
+                      : route.kind === "search"
+                        ? `已载入 ${tracks.length} / ${collection?.total || tracks.length} 首`
+                        : `共 ${tracks.length} 首${collection?.skipped ? " · " + collection.skipped + " 首平台未提供曲目信息" : ""}`}
                   </span>
                   <button
                     className="text-button"
@@ -1132,10 +1171,12 @@ function DesktopApp() {
               {busy && (
                 <div className="loading-state">
                   <LoaderCircle size={20} className="spin" />
-                  正在读取音乐
+                  {loadingProgress
+                    ? `正在读取全部歌曲：${loadingProgress.loaded}${loadingProgress.total !== null ? " / " + loadingProgress.total : ""} 首`
+                    : "正在读取音乐"}
                 </div>
               )}
-              {collection?.hasMore && !busy && (
+              {route.kind === "search" && collection?.hasMore && !busy && (
                 <button
                   className="load-more secondary"
                   onClick={() => void load(true)}
@@ -1324,66 +1365,91 @@ function DesktopApp() {
                 清空队列
               </button>
             )}
-            <div className="queue-list">
-              {player.queue.length ? (
-                player.queue.map((track, i) => (
-                  <div
-                    className={`queue-item ${current?.id === track.id ? "selected" : ""}`}
-                    key={track.id}
-                  >
-                    <button
-                      className="queue-track"
-                      onClick={() => void player.play(track)}
-                    >
-                      <Cover track={track} />
-                      <span>
-                        <strong>{track.title}</strong>
-                        <small>{track.artist}</small>
-                      </span>
-                    </button>
-                    <div className="queue-item-actions">
-                      <IconButton
-                        label={`上移 ${track.title}`}
-                        disabled={i === 0}
-                        onClick={() =>
-                          player.setQueue((q) => {
-                            const next = [...q];
-                            [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                            return next;
-                          })
-                        }
-                      >
-                        <ArrowUp size={14} />
-                      </IconButton>
-                      <IconButton
-                        label={`下移 ${track.title}`}
-                        disabled={i === player.queue.length - 1}
-                        onClick={() =>
-                          player.setQueue((q) => {
-                            const next = [...q];
-                            [next[i], next[i + 1]] = [next[i + 1], next[i]];
-                            return next;
-                          })
-                        }
-                      >
-                        <ArrowDown size={14} />
-                      </IconButton>
-                      <IconButton
-                        label={`移除 ${track.title}`}
-                        onClick={() => player.remove(track.id)}
-                      >
-                        <X size={15} />
-                      </IconButton>
-                    </div>
+            <div className="queue-list" ref={queueScrollRef}>
+              <div ref={queueRowsRef}>
+                {player.queue.length ? (
+                  <>
+                    {queueWindow.before > 0 && (
+                      <div
+                        aria-hidden="true"
+                        style={{ height: queueWindow.before }}
+                      />
+                    )}
+                    {queueWindow.visible.map((track, visibleIndex) => {
+                      const i = queueWindow.start + visibleIndex;
+                      return (
+                        <div
+                          className={`queue-item ${current?.id === track.id ? "selected" : ""}`}
+                          key={track.id}
+                        >
+                          <button
+                            className="queue-track"
+                            onClick={() => void player.play(track)}
+                          >
+                            <Cover track={track} />
+                            <span>
+                              <strong>{track.title}</strong>
+                              <small>{track.artist}</small>
+                            </span>
+                          </button>
+                          <div className="queue-item-actions">
+                            <IconButton
+                              label={`上移 ${track.title}`}
+                              disabled={i === 0}
+                              onClick={() =>
+                                player.setQueue((q) => {
+                                  const next = [...q];
+                                  [next[i - 1], next[i]] = [
+                                    next[i],
+                                    next[i - 1],
+                                  ];
+                                  return next;
+                                })
+                              }
+                            >
+                              <ArrowUp size={14} />
+                            </IconButton>
+                            <IconButton
+                              label={`下移 ${track.title}`}
+                              disabled={i === player.queue.length - 1}
+                              onClick={() =>
+                                player.setQueue((q) => {
+                                  const next = [...q];
+                                  [next[i], next[i + 1]] = [
+                                    next[i + 1],
+                                    next[i],
+                                  ];
+                                  return next;
+                                })
+                              }
+                            >
+                              <ArrowDown size={14} />
+                            </IconButton>
+                            <IconButton
+                              label={`移除 ${track.title}`}
+                              onClick={() => player.remove(track.id)}
+                            >
+                              <X size={15} />
+                            </IconButton>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {queueWindow.after > 0 && (
+                      <div
+                        aria-hidden="true"
+                        style={{ height: queueWindow.after }}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <div className="empty-state">
+                    <ListMusic size={32} />
+                    <h3>播放队列为空</h3>
+                    <p>将喜欢的歌曲加入队列。</p>
                   </div>
-                ))
-              ) : (
-                <div className="empty-state">
-                  <ListMusic size={32} />
-                  <h3>播放队列为空</h3>
-                  <p>将喜欢的歌曲加入队列。</p>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </aside>
         </>
@@ -1564,7 +1630,7 @@ function DesktopApp() {
             {dialog.type === "settings" && (
               <>
                 <div className="settings-brand">
-                  声间 <span>SOUNDROOM / 0.3.0</span>
+                  声间 <span>SOUNDROOM / 0.4.0</span>
                 </div>
                 <div className="setting-row">
                   <span>在线音质</span>

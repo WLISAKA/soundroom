@@ -54,6 +54,8 @@ export type Collection = {
   owned?: boolean;
   dirId?: number;
   description?: string;
+  complete?: boolean;
+  skipped?: number;
 };
 export type Library = {
   created: Playlist[];
@@ -78,6 +80,12 @@ export interface DesktopAPI {
   account(): Promise<Account>;
   library(): Promise<Library>;
   collection(kind: string, id: string, page?: number): Promise<Collection>;
+  collectionAll(
+    kind: string,
+    id: string,
+    requestId: string,
+  ): Promise<Collection>;
+  cancelCollection(requestId: string): Promise<void>;
   search(
     query: string,
     page?: number,
@@ -102,7 +110,12 @@ export interface DesktopAPI {
   publish(data: Playback): void;
   command(name: string, value?: number): void;
   subscribe(
-    channel: "playback" | "command" | "account" | "library",
+    channel:
+      | "playback"
+      | "command"
+      | "account"
+      | "library"
+      | "collection-progress",
     callback: (data: any) => void,
   ): () => void;
 }

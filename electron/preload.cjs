@@ -6,6 +6,8 @@ const methods = [
   "account",
   "library",
   "collection",
+  "collectionAll",
+  "cancelCollection",
   "search",
   "playUrl",
   "lyric",
@@ -35,7 +37,15 @@ api.publish = (data) => ipcRenderer.send("soundroom:playback", data);
 api.command = (name, value) =>
   ipcRenderer.send("soundroom:command", { name, value });
 api.subscribe = (channel, callback) => {
-  if (!["playback", "command", "account", "library"].includes(channel))
+  if (
+    ![
+      "playback",
+      "command",
+      "account",
+      "library",
+      "collection-progress",
+    ].includes(channel)
+  )
     return () => {};
   const handler = (_event, data) => callback(data);
   ipcRenderer.on(`soundroom:${channel}`, handler);
