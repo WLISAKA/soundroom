@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LyricLine, SavedPlayer, Track } from "./types";
+import type { LyricLine, QualityPreference, SavedPlayer, Track } from "./types";
 
 const api = window.soundroom;
 export function usePlayer(notify: (message: string) => void) {
@@ -14,16 +14,36 @@ export function usePlayer(notify: (message: string) => void) {
   const [repeat, setRepeat] = useState<SavedPlayer["repeat"]>("all");
   const [shuffle, setShuffle] = useState(false);
   const [lines, setLines] = useState<LyricLine[]>([]);
-  const [quality, setQuality] = useState("HQ");
+  const [quality, setQuality] = useState("");
+  const [preferredQuality, setPreferredQuality] =
+    useState<QualityPreference>("high");
   const [ready, setReady] = useState(false);
   const request = useRef(0);
   const loadedId = useRef("");
+  const pending = useRef<{ autoPlay: boolean; resume: number } | null>(null);
   const seekOnLoad = useRef(0);
-  const latest = useRef({ queue, current, position, volume, repeat, shuffle });
-  latest.current = { queue, current, position, volume, repeat, shuffle };
+  const latest = useRef({
+    queue,
+    current,
+    position,
+    volume,
+    repeat,
+    shuffle,
+    preferredQuality,
+  });
+  latest.current = {
+    queue,
+    current,
+    position,
+    volume,
+    repeat,
+    shuffle,
+    preferredQuality,
+  };
   const play = useCallback(
     async (track: Track, list?: Track[], resume = 0, autoPlay = true) => {
       const token = ++request.current;
+      pending.current = { autoPlay, resume };
       audio.current.pause();
       loadedId.current = "";
       audio.current.removeAttribute("src");
@@ -36,6 +56,7 @@ export function usePlayer(notify: (message: string) => void) {
       setDuration(track.duration || 0);
       setLines([]);
       setLoading(true);
+      setQuality("");
       setPlaying(false);
       seekOnLoad.current = resume;
       api
@@ -45,7 +66,10 @@ export function usePlayer(notify: (message: string) => void) {
         })
         .catch(() => {});
       try {
-        const result = await api.playUrl(track);
+        const result = await api.playUrl(
+          track,
+          latest.current.preferredQuality,
+        );
         if (request.current !== token) return;
         setQuality(result.quality);
         audio.current.src = result.url;
@@ -55,11 +79,32 @@ export function usePlayer(notify: (message: string) => void) {
       } catch (error) {
         if (request.current === token) notify((error as Error).message);
       } finally {
-        if (request.current === token) setLoading(false);
+        if (request.current === token) {
+          pending.current = null;
+          setLoading(false);
+        }
       }
     },
     [notify],
   );
+  const changeQuality = (value: QualityPreference) => {
+    const { current: track, position, preferredQuality } = latest.current;
+    if (value === preferredQuality) return;
+    latest.current.preferredQuality = value;
+    setPreferredQuality(value);
+    if (
+      track &&
+      track.source !== "local" &&
+      (loadedId.current || pending.current)
+    ) {
+      void play(
+        track,
+        undefined,
+        pending.current?.resume ?? position,
+        pending.current?.autoPlay ?? !audio.current.paused,
+      );
+    }
+  };
   const toggle = useCallback(async () => {
     const track = latest.current.current || latest.current.queue[0];
     if (!track) {
@@ -129,6 +174,7 @@ export function usePlayer(notify: (message: string) => void) {
       setVolume(saved.volume ?? 0.75);
       setRepeat(saved.repeat || "all");
       setShuffle(!!saved.shuffle);
+      setPreferredQuality(saved.preferredQuality ?? "high");
       const track = saved.queue?.find((t) => t.id === saved.currentId);
       if (track) {
         setCurrent(track);
@@ -141,6 +187,7 @@ export function usePlayer(notify: (message: string) => void) {
   const remove = (id: string) => {
     if (latest.current.current?.id === id) {
       ++request.current;
+      pending.current = null;
       audio.current.pause();
       audio.current.removeAttribute("src");
       audio.current.load();
@@ -155,6 +202,7 @@ export function usePlayer(notify: (message: string) => void) {
   };
   const clear = () => {
     ++request.current;
+    pending.current = null;
     audio.current.pause();
     audio.current.removeAttribute("src");
     audio.current.load();
@@ -234,6 +282,7 @@ export function usePlayer(notify: (message: string) => void) {
           volume: s.volume,
           repeat: s.repeat,
           shuffle: s.shuffle,
+          preferredQuality: s.preferredQuality,
         })
         .catch(() => {});
     };
@@ -244,7 +293,7 @@ export function usePlayer(notify: (message: string) => void) {
       clearInterval(timer);
       window.removeEventListener("beforeunload", save);
     };
-  }, [ready, queue, current, volume, repeat, shuffle]);
+  }, [ready, queue, current, volume, repeat, shuffle, preferredQuality]);
   const lyricIndex = lines.reduce(
     (found, line, i) => (line.time <= position ? i : found),
     -1,
@@ -257,6 +306,7 @@ export function usePlayer(notify: (message: string) => void) {
       position,
       duration,
       lyric,
+      lyricIndex,
       nextLyric: lines[lyricIndex + 1]?.text || "",
       quality,
       shuffle,
@@ -312,6 +362,8 @@ export function usePlayer(notify: (message: string) => void) {
     lines,
     lyricIndex,
     quality,
+    preferredQuality,
+    changeQuality,
     play,
     toggle,
     move,

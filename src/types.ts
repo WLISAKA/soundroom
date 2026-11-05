@@ -1,3 +1,5 @@
+export type OnlineSource = "qq" | "netease";
+export type QualityPreference = "standard" | "higher" | "high" | "lossless";
 export type Track = {
   id: string;
   title: string;
@@ -5,7 +7,7 @@ export type Track = {
   album: string;
   duration: number;
   cover: string;
-  source: "qq" | "local";
+  source: OnlineSource | "local";
   mid?: string;
   songId?: number;
   mediaMid?: string;
@@ -34,6 +36,7 @@ export type SavedPlayer = {
   volume: number;
   repeat: "off" | "all" | "one";
   shuffle: boolean;
+  preferredQuality?: QualityPreference;
 };
 export type Playback = {
   track?: Track | null;
@@ -41,6 +44,7 @@ export type Playback = {
   position?: number;
   duration?: number;
   lyric?: string;
+  lyricIndex?: number;
   nextLyric?: string;
   quality?: string;
   shuffle?: boolean;
@@ -67,6 +71,7 @@ export interface DesktopAPI {
     local: Track[];
     player: SavedPlayer | null;
     account: Account;
+    neteaseAccount: Account;
     version: string;
     shortcuts: {
       action: string;
@@ -75,22 +80,28 @@ export interface DesktopAPI {
       registered: boolean;
     }[];
   }>;
-  login(): Promise<void>;
-  logout(): Promise<void>;
-  account(): Promise<Account>;
+  login(source?: OnlineSource): Promise<void>;
+  logout(source?: OnlineSource): Promise<void>;
+  account(source?: OnlineSource): Promise<Account>;
   library(): Promise<Library>;
+  neteaseLibrary(): Promise<Playlist[]>;
   collection(kind: string, id: string, page?: number): Promise<Collection>;
   collectionAll(
     kind: string,
     id: string,
     requestId: string,
+    source?: OnlineSource,
   ): Promise<Collection>;
   cancelCollection(requestId: string): Promise<void>;
   search(
     query: string,
     page?: number,
+    source?: OnlineSource,
   ): Promise<{ tracks: Track[]; total: number; hasMore: boolean }>;
-  playUrl(track: Track): Promise<{ url: string; quality: string }>;
+  playUrl(
+    track: Track,
+    preference?: QualityPreference,
+  ): Promise<{ url: string; quality: string }>;
   lyric(track: Track): Promise<LyricLine[]>;
   importLocal(): Promise<{ tracks: Track[]; skipped: string[] }>;
   removeLocal(id: string): Promise<Track[]>;
@@ -114,6 +125,7 @@ export interface DesktopAPI {
       | "playback"
       | "command"
       | "account"
+      | "netease-account"
       | "library"
       | "collection-progress",
     callback: (data: any) => void,

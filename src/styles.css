@@ -432,6 +432,7 @@ input {
   outline: none;
   color: #263a59;
   width: 100%;
+  min-width: 0;
   font-size: 10px;
 }
 .search-box input::placeholder {
@@ -443,9 +444,26 @@ input {
 .search-box:focus-within {
   border-color: #a6c5f8;
 }
-.search-box kbd {
-  font-size: 11px;
-  opacity: 0.5;
+.search-box > svg {
+  flex-shrink: 0;
+}
+.search-box select,
+.setting-row select {
+  color: #4b607d;
+  font: inherit;
+  font-size: 10px;
+}
+.search-box select {
+  border: 0;
+  border-left: 1px solid #d9e0eb;
+  background: transparent;
+  padding-left: 6px;
+}
+.setting-row select {
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 4px;
+  padding: 5px;
 }
 .window-actions {
   display: flex;

@@ -54,10 +54,22 @@ export function Auxiliary() {
           <span>{state.track?.artist || "未选择歌曲"}</span>
         </div>
         <div className="desktop-lyric" aria-live="off">
-          <strong title={state.lyric}>
-            {state.lyric || (state.track ? "暂无同步歌词" : "—")}
-          </strong>
-          <span>{state.nextLyric || "\u00a0"}</span>
+          <div
+            className={
+              state.lyric ? "mini-lyric-lines is-synced" : "mini-lyric-lines"
+            }
+            key={`${state.track?.id || ""}:${state.lyricIndex ?? -1}:${state.lyric || ""}`}
+          >
+            <strong title={state.lyric}>
+              {state.lyric ||
+                (state.nextLyric
+                  ? "\u00a0"
+                  : state.track
+                    ? "暂无同步歌词"
+                    : "—")}
+            </strong>
+            <span>{state.nextLyric || "\u00a0"}</span>
+          </div>
         </div>
         <div className="mini-bottom">
           <div className="mini-controls">

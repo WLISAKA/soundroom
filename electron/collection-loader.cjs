@@ -33,13 +33,13 @@ async function loadCompleteCollection(
       if (!tracks.has(track.id)) tracks.set(track.id, track);
     skipped += count - page.tracks.length;
     if (page.tracks.length && tracks.size === previousCount)
-      throw new Error("QQ 音乐重复返回了同一页，未能读取完整歌单，请重试");
+      throw new Error("平台重复返回了同一页，未能读取完整歌单，请重试");
     offset += count;
     onProgress({ loaded: tracks.size, total: expectedTotal, skipped });
     if (expectedTotal !== null && offset > expectedTotal)
       throw new Error("歌单返回的曲目数量不一致，请刷新重试");
     if (expectedTotal !== null ? offset === expectedTotal : count === 0) break;
-    if (!count) throw new Error("QQ 音乐未返回歌单的剩余歌曲，请重试");
+    if (!count) throw new Error("平台未返回歌单的剩余歌曲，请重试");
   }
   return {
     ...first,

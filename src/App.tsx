@@ -46,15 +46,25 @@ import {
 } from "lucide-react";
 import { usePlayer } from "./player";
 import { useVirtualList } from "./useVirtualList";
-import type { Account, Collection, Library, Playlist, Track } from "./types";
+import type {
+  Account,
+  Collection,
+  Library,
+  OnlineSource,
+  Playlist,
+  QualityPreference,
+  Track,
+} from "./types";
 
 const api = window.soundroom;
+const sourceNames = { qq: "QQ 音乐", netease: "网易云音乐", local: "本地" };
 type Route = {
   kind:
     | "home"
     | "liked"
     | "created"
     | "collected"
+    | "netease-library"
     | "local"
     | "playlist"
     | "album"
@@ -62,6 +72,7 @@ type Route = {
     | "search";
   id?: string;
   name?: string;
+  source?: OnlineSource;
 };
 type Dialog =
   | { type: "create" }
@@ -136,6 +147,12 @@ function DesktopApp() {
   const notify = useCallback((message: string) => setToast(message), []);
   const player = usePlayer(notify);
   const [account, setAccount] = useState<Account>({ loggedIn: false });
+  const [neteaseAccount, setNeteaseAccount] = useState<Account>({
+    loggedIn: false,
+  });
+  const [neteasePlaylists, setNeteasePlaylists] = useState<Playlist[]>([]);
+  const [searchSource, setSearchSource] = useState<OnlineSource>("qq");
+  const [version, setVersion] = useState("");
   const [shortcuts, setShortcuts] = useState<
     Awaited<ReturnType<typeof api.bootstrap>>["shortcuts"]
   >([]);
@@ -202,6 +219,8 @@ function DesktopApp() {
       .then((data) => {
         setLocal(data.local);
         applyAccount(data.account);
+        setNeteaseAccount(data.neteaseAccount);
+        setVersion(data.version);
         player.restore(data.player);
         setShortcuts(data.shortcuts || []);
         setInitialized(true);
@@ -216,11 +235,13 @@ function DesktopApp() {
       c = api.subscribe("collection-progress", (progress) => {
         if (progress.requestId === activeCollectionRequest.current)
           setLoadingProgress(progress);
-      });
+      }),
+      d = api.subscribe("netease-account", setNeteaseAccount);
     return () => {
       a();
       b();
       c();
+      d();
     };
   }, []);
   useEffect(() => {
@@ -231,13 +252,18 @@ function DesktopApp() {
     const timer = setTimeout(() => setToast(""), 7000);
     return () => clearTimeout(timer);
   }, [toast]);
-  const refreshAccount = async () => {
+  const refreshAccount = async (source: OnlineSource = "qq") => {
     try {
-      applyAccount(await api.account());
+      const data = await api.account(source);
+      if (source === "qq") applyAccount(data);
+      else setNeteaseAccount(data);
     } catch (e) {
       notify((e as Error).message);
     }
   };
+  const neteaseRoute =
+    route.source === "netease" || route.kind === "netease-library";
+  const routeAccount = neteaseRoute ? neteaseAccount : account;
   const load = useCallback(
     async (append = false) => {
       const token = ++loadToken.current;
@@ -247,6 +273,22 @@ function DesktopApp() {
           .catch(() => {});
       activeCollectionRequest.current = null;
       setLoadingProgress(null);
+      if (route.kind === "netease-library") {
+        setCollection(null);
+        setNeteasePlaylists([]);
+        setError("");
+        setBusy(neteaseAccount.loggedIn);
+        if (!neteaseAccount.loggedIn) return;
+        try {
+          const playlists = await api.neteaseLibrary();
+          if (token === loadToken.current) setNeteasePlaylists(playlists);
+        } catch (e) {
+          if (token === loadToken.current) setError((e as Error).message);
+        } finally {
+          if (token === loadToken.current) setBusy(false);
+        }
+        return;
+      }
       if (
         !["liked", "playlist", "album", "artist", "search"].includes(route.kind)
       ) {
@@ -276,9 +318,18 @@ function DesktopApp() {
           route.kind === "search"
             ? {
                 name: route.name || "",
-                ...(await api.search(route.name || "", nextPage + 1)),
+                ...(await api.search(
+                  route.name || "",
+                  nextPage + 1,
+                  route.source,
+                )),
               }
-            : await api.collectionAll(route.kind, route.id || "", requestId);
+            : await api.collectionAll(
+                route.kind,
+                route.id || "",
+                requestId,
+                route.source,
+              );
         if (token !== loadToken.current) return;
         setCollection((previous) =>
           append && previous
@@ -311,7 +362,7 @@ function DesktopApp() {
         }
       }
     },
-    [route, account.loggedIn, page],
+    [route, account.loggedIn, neteaseAccount.loggedIn, page],
   );
   useEffect(() => {
     void load();
@@ -323,7 +374,7 @@ function DesktopApp() {
           .catch(() => {});
       activeCollectionRequest.current = null;
     };
-  }, [route, account]);
+  }, [route, routeAccount]);
   const tracks = route.kind === "local" ? local : collection?.tracks || [];
   const trackWindow = useVirtualList(
     tracks,
@@ -495,16 +546,21 @@ function DesktopApp() {
     liked: "我的喜欢",
     created: "个人歌单",
     collected: "收藏歌单",
+    "netease-library": "网易云歌单",
     local: "本地音乐",
     playlist: collection?.name || route.name,
     album: collection?.name || route.name || "专辑",
     artist: collection?.name || route.name || "歌手",
     search: `“${route.name}”`,
   }[route.kind];
-  const selectedPlaylist = library.created.find((p) => p.id === route.id);
+  const selectedPlaylist = neteaseRoute
+    ? undefined
+    : library.created.find((p) => p.id === route.id);
   const needsLogin =
-    !account.loggedIn &&
-    ["liked", "created", "collected", "playlist"].includes(route.kind);
+    !routeAccount.loggedIn &&
+    ["liked", "created", "collected", "playlist", "netease-library"].includes(
+      route.kind,
+    );
   const cards =
     route.kind === "collected" ? library.collected : library.created;
   const current = player.current;
@@ -559,7 +615,7 @@ function DesktopApp() {
                     {track.title}
                   </button>
                   <div className="track-subtitle">
-                    {track.source === "qq" && track.artists?.length
+                    {track.source !== "local" && track.artists?.length
                       ? track.artists.map((artist, i) => (
                           <span key={artist.id || i}>
                             {i > 0 && " / "}
@@ -567,6 +623,7 @@ function DesktopApp() {
                               onClick={() =>
                                 navigate({
                                   kind: "artist",
+                                  source: track.source as OnlineSource,
                                   id: artist.id,
                                   name: artist.name,
                                 })
@@ -578,6 +635,7 @@ function DesktopApp() {
                         ))
                       : track.artist}
                     {track.source === "local" && <small>本地</small>}
+                    {track.source === "netease" && <small>网易云</small>}
                   </div>
                 </div>
               </div>
@@ -587,6 +645,7 @@ function DesktopApp() {
                 onClick={() =>
                   navigate({
                     kind: "album",
+                    source: track.source === "local" ? undefined : track.source,
                     id: track.albumMid,
                     name: track.album,
                   })
@@ -682,7 +741,7 @@ function DesktopApp() {
       </div>
     );
   }
-  function renderCards(list: Playlist[]) {
+  function renderCards(list: Playlist[], source: OnlineSource = "qq") {
     return (
       <div className="playlist-grid">
         {list.map((p) => (
@@ -690,7 +749,7 @@ function DesktopApp() {
             <button
               className="playlist-art"
               onClick={() =>
-                navigate({ kind: "playlist", id: p.id, name: p.name })
+                navigate({ kind: "playlist", id: p.id, name: p.name, source })
               }
             >
               <Cover track={p} />
@@ -702,12 +761,12 @@ function DesktopApp() {
               <button
                 className="card-name"
                 onClick={() =>
-                  navigate({ kind: "playlist", id: p.id, name: p.name })
+                  navigate({ kind: "playlist", id: p.id, name: p.name, source })
                 }
               >
                 {p.name}
               </button>
-              {p.kind === "created" && (
+              {p.kind === "created" && source === "qq" && (
                 <IconButton
                   label={`删除歌单 ${p.name}`}
                   onClick={() => openDialog({ type: "delete", playlist: p })}
@@ -769,6 +828,7 @@ function DesktopApp() {
               { kind: "liked", text: "我的喜欢", icon: Heart },
               { kind: "created", text: "个人歌单", icon: ListMusic },
               { kind: "collected", text: "收藏歌单", icon: Bookmark },
+              { kind: "netease-library", text: "网易云歌单", icon: ListMusic },
               { kind: "local", text: "本地音乐", icon: Music2 },
             ] as const
           ).map((item) => (
@@ -801,7 +861,7 @@ function DesktopApp() {
           {library.created.slice(0, 9).map((p) => (
             <button
               key={p.id}
-              className={route.id === p.id ? "selected" : ""}
+              className={!neteaseRoute && route.id === p.id ? "selected" : ""}
               onClick={() =>
                 navigate({ kind: "playlist", id: p.id, name: p.name })
               }
@@ -873,7 +933,11 @@ function DesktopApp() {
             onSubmit={(e: FormEvent) => {
               e.preventDefault();
               if (search.trim())
-                navigate({ kind: "search", name: search.trim() });
+                navigate({
+                  kind: "search",
+                  name: search.trim(),
+                  source: searchSource,
+                });
             }}
           >
             <Search size={16} />
@@ -883,7 +947,23 @@ function DesktopApp() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <kbd>↵</kbd>
+            <select
+              aria-label="搜索音源"
+              value={searchSource}
+              onChange={(e) => {
+                const source = e.target.value as OnlineSource;
+                setSearchSource(source);
+                if (route.kind === "search")
+                  navigate({
+                    ...route,
+                    source,
+                    name: search.trim() || route.name,
+                  });
+              }}
+            >
+              <option value="qq">QQ 音乐</option>
+              <option value="netease">网易云音乐</option>
+            </select>
           </form>
           <div className="window-actions no-drag">
             <IconButton
@@ -1009,7 +1089,40 @@ function DesktopApp() {
               </div>
             </>
           ) : needsLogin ? (
-            loginEmpty()
+            neteaseRoute ? (
+              <div className="empty-state">
+                <div className="empty-icon">
+                  <Music2 size={30} />
+                </div>
+                <h3>连接网易云音乐</h3>
+                <p>登录后读取账号中的歌单。</p>
+                <button
+                  className="primary"
+                  onClick={() =>
+                    void api.login("netease").catch((e) => notify(e.message))
+                  }
+                >
+                  登录网易云音乐
+                </button>
+              </div>
+            ) : (
+              loginEmpty()
+            )
+          ) : route.kind === "netease-library" ? (
+            busy ? (
+              <div className="loading-state">
+                <LoaderCircle className="spin" size={22} />
+                正在读取歌单
+              </div>
+            ) : error ? (
+              <div className="error-banner">{error}</div>
+            ) : neteasePlaylists.length ? (
+              renderCards(neteasePlaylists, "netease")
+            ) : (
+              <div className="empty-state">
+                <h3>暂无网易云歌单</h3>
+              </div>
+            )
           ) : ["created", "collected"].includes(route.kind) ? (
             <>
               {library.warnings.length > 0 && (
@@ -1063,7 +1176,9 @@ function DesktopApp() {
                           ? "歌手 · 热门歌曲"
                           : route.kind === "album"
                             ? "专辑"
-                            : "QQ 音乐歌单"}
+                            : neteaseRoute
+                              ? "网易云音乐歌单"
+                              : "QQ 音乐歌单"}
                       </span>
                       <p>{collection.total} 首歌曲</p>
                       {collection.description && (
@@ -1301,9 +1416,16 @@ function DesktopApp() {
           </div>
         </div>
         <div className="player-extras">
-          <span className="quality" title={player.quality}>
-            {current?.source === "local" ? "LOCAL" : "HQ"}
-          </span>
+          <button
+            className="quality"
+            title={player.quality || "设置在线偏好音质"}
+            aria-label="设置在线偏好音质"
+            onClick={() => openDialog({ type: "settings" })}
+          >
+            {player.quality && current
+              ? player.quality.split(" · ")[0]
+              : "音质"}
+          </button>
           <IconButton label="歌词小窗" onClick={() => void api.window("mini")}>
             <PictureInPicture2 size={18} />
           </IconButton>
@@ -1389,7 +1511,9 @@ function DesktopApp() {
                             <Cover track={track} />
                             <span>
                               <strong>{track.title}</strong>
-                              <small>{track.artist}</small>
+                              <small>
+                                {track.artist} · {sourceNames[track.source]}
+                              </small>
                             </span>
                           </button>
                           <div className="queue-item-actions">
@@ -1630,12 +1754,26 @@ function DesktopApp() {
             {dialog.type === "settings" && (
               <>
                 <div className="settings-brand">
-                  声间 <span>SOUNDROOM / 0.4.0</span>
+                  声间 <span>SOUNDROOM / {version}</span>
                 </div>
                 <div className="setting-row">
-                  <span>在线音质</span>
-                  <strong>HQ · 320 kbps</strong>
+                  <span>在线偏好音质</span>
+                  <select
+                    aria-label="在线偏好音质"
+                    value={player.preferredQuality}
+                    onChange={(e) =>
+                      player.changeQuality(e.target.value as QualityPreference)
+                    }
+                  >
+                    <option value="standard">标准 · 128 kbps</option>
+                    <option value="higher">较高 · 192 kbps</option>
+                    <option value="high">HQ · 320 kbps</option>
+                    <option value="lossless">无损 · FLAC</option>
+                  </select>
                 </div>
+                <p className="settings-note">
+                  优先播放所选音质，资源不可用时降到最接近的可用音质。
+                </p>
                 <div className="setting-row">
                   <span>关闭主窗口</span>
                   <strong>留在托盘，继续播放</strong>
@@ -1701,10 +1839,40 @@ function DesktopApp() {
                   )}
                   <button
                     className="primary"
-                    onClick={() => void refreshAccount()}
+                    onClick={() => void refreshAccount("qq")}
                   >
                     <RefreshCw size={15} />
                     刷新账号
+                  </button>
+                </div>
+                <div className="setting-row">
+                  <span>网易云音乐账号</span>
+                  <strong>
+                    {neteaseAccount.loggedIn
+                      ? neteaseAccount.nickname
+                      : "尚未连接"}
+                  </strong>
+                </div>
+                <div className="modal-actions">
+                  <button
+                    className="secondary"
+                    onClick={() => {
+                      const operation = neteaseAccount.loggedIn
+                        ? api.logout("netease")
+                        : api.login("netease");
+                      void operation.catch((e) => notify(e.message));
+                    }}
+                  >
+                    {neteaseAccount.loggedIn
+                      ? "退出网易云账号"
+                      : "连接网易云音乐"}
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => void refreshAccount("netease")}
+                  >
+                    <RefreshCw size={15} />
+                    刷新网易云账号
                   </button>
                 </div>
                 <button

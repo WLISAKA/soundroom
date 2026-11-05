@@ -5,6 +5,7 @@ const methods = [
   "logout",
   "account",
   "library",
+  "neteaseLibrary",
   "collection",
   "collectionAll",
   "cancelCollection",
@@ -42,6 +43,7 @@ api.subscribe = (channel, callback) => {
       "playback",
       "command",
       "account",
+      "netease-account",
       "library",
       "collection-progress",
     ].includes(channel)

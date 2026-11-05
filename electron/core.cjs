@@ -1,6 +1,16 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+const onlineQualities = ["lossless", "high", "higher", "standard"];
+function preferredQuality(value) {
+  return onlineQualities.includes(value) ? value : "high";
+}
+function qualityFallbacks(value) {
+  return onlineQualities.slice(
+    onlineQualities.indexOf(preferredQuality(value)),
+  );
+}
+
 function parseLrc(text = "") {
   let offset = Number(text.match(/\[offset:([+-]?\d+)\]/i)?.[1] || 0) / 1000;
   const lines = [];
@@ -80,6 +90,8 @@ function httpUrl(value) {
   }
 }
 module.exports = {
+  preferredQuality,
+  qualityFallbacks,
   parseLrc,
   lyricAt,
   normalizeTrack,

@@ -15,7 +15,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { randomUUID } = require("node:crypto");
-const { atomicWrite, readJson, parseLrc } = require("./core.cjs");
+const {
+  atomicWrite,
+  readJson,
+  parseLrc,
+  preferredQuality,
+} = require("./core.cjs");
 const { registerPlayerShortcuts } = require("./shortcuts.cjs");
 
 protocol.registerSchemesAsPrivileged([
@@ -37,12 +42,32 @@ let store,
   mini,
   tray,
   qq,
-  loginWindow,
+  netease,
   quitting = false,
   lastPlayback = {},
   shortcuts = [],
   activeCollection,
   saveTimer;
+const loginWindows = new Map();
+const services = {
+  qq: {
+    title: "QQ 音乐",
+    partition: "persist:qqmusic",
+    domain: "qq.com",
+    url: "https://y.qq.com/",
+    event: "account",
+  },
+  netease: {
+    title: "网易云音乐",
+    partition: "persist:neteasemusic",
+    domain: "music.163.com",
+    url: "https://music.163.com/",
+    event: "netease-account",
+  },
+};
+const serviceFor = (source) =>
+  Object.hasOwn(services, source) ? services[source] : services.qq;
+const providerFor = (source) => (source === "netease" ? netease : qq);
 const ownWindows = () => [main, mini].filter((w) => w && !w.isDestroyed());
 const broadcast = (channel, data) =>
   ownWindows().forEach((w) => w.webContents.send(`soundroom:${channel}`, data));
@@ -69,7 +94,7 @@ function register(name, action) {
       return {
         ok: false,
         error: String(e.message || "操作失败").replace(
-          /(?:uin|qm_keyst|qqmusic_key|p_skey)=[^;\s]*/g,
+          /(?:uin|qm_keyst|qqmusic_key|p_skey|MUSIC_U|__csrf)=[^;\s]*/gi,
           "[已隐藏]",
         ),
       };
@@ -192,50 +217,63 @@ function createTray() {
   );
   tray.on("double-click", showMain);
 }
-async function openLogin() {
+async function openLogin(source = "qq") {
+  const service = serviceFor(source);
+  const loginWindow = loginWindows.get(service.partition);
   if (loginWindow && !loginWindow.isDestroyed()) {
     loginWindow.focus();
     return;
   }
-  loginWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1100,
     height: 760,
-    title: "QQ 音乐 · 登录后关闭此窗口",
+    title: `${service.title} · 登录后关闭此窗口`,
     autoHideMenuBar: true,
     webPreferences: {
-      partition: "persist:qqmusic",
+      partition: service.partition,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
+  loginWindows.set(service.partition, win);
   const allow = (url) => {
     try {
       const u = new URL(url);
       return (
         u.protocol === "https:" &&
-        (u.hostname === "qq.com" || u.hostname.endsWith(".qq.com"))
+        (u.hostname === service.domain ||
+          u.hostname.endsWith(`.${service.domain}`))
       );
     } catch {
       return false;
     }
   };
-  loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (allow(url)) loginWindow.loadURL(url);
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (allow(url)) void win.loadURL(url).catch(() => {});
     return { action: "deny" };
   });
-  loginWindow.webContents.on("will-navigate", (event, url) => {
-    if (!allow(url)) event.preventDefault();
-  });
-  loginWindow.on("closed", async () => {
-    loginWindow = null;
+  for (const eventName of ["will-navigate", "will-redirect"])
+    win.webContents.on(eventName, (event, url) => {
+      if (!allow(url)) event.preventDefault();
+    });
+  win.on("closed", async () => {
+    if (loginWindows.get(service.partition) !== win) return;
+    loginWindows.delete(service.partition);
     try {
-      broadcast("account", await qq.account());
+      broadcast(service.event, await providerFor(source).account());
     } catch {
-      broadcast("account", { loggedIn: false });
+      broadcast(service.event, { loggedIn: false });
     }
   });
-  await loginWindow.loadURL("https://y.qq.com/");
+  try {
+    await win.loadURL(service.url);
+  } catch {
+    if (!win.isDestroyed()) {
+      win.close();
+      throw new Error(`无法打开${service.title}登录页面，请检查网络后重试`);
+    }
+  }
 }
 async function importLocal() {
   const result = await dialog.showOpenDialog(main, {
@@ -317,14 +355,19 @@ else {
       store = readJson(dataFile(), { local: [], player: null });
       if (!Array.isArray(store.local)) store.local = [];
       const { QQProvider } = require("./qq.cjs");
+      const { NeteaseProvider } = require("./netease.cjs");
       const qqSession = session.fromPartition("persist:qqmusic");
-      session.defaultSession.setPermissionRequestHandler(
-        (_contents, _permission, callback) => callback(false),
-      );
-      qqSession.setPermissionRequestHandler(
-        (_contents, _permission, callback) => callback(false),
-      );
+      const neteaseSession = session.fromPartition("persist:neteasemusic");
+      for (const isolatedSession of [
+        session.defaultSession,
+        qqSession,
+        neteaseSession,
+      ])
+        isolatedSession.setPermissionRequestHandler(
+          (_contents, _permission, callback) => callback(false),
+        );
       qq = new QQProvider(qqSession);
+      netease = new NeteaseProvider(neteaseSession);
       protocol.handle("soundroom", async (request) => {
         const url = new URL(request.url);
         if (url.hostname !== "track")
@@ -342,23 +385,38 @@ else {
           return new Response("文件不存在", { status: 404 });
         }
       });
-      register("bootstrap", async () => ({
-        local: localTracks(),
-        player: store.player,
-        account: await qq.account().catch(() => ({ loggedIn: false })),
-        version: app.getVersion(),
-        shortcuts,
-      }));
-      register("login", openLogin);
-      register("logout", async () => {
-        await qqSession.clearStorageData();
-        broadcast("account", { loggedIn: false });
+      register("bootstrap", async () => {
+        const [account, neteaseAccount] = await Promise.all(
+          [qq, netease].map((provider) =>
+            provider.account().catch(() => ({ loggedIn: false })),
+          ),
+        );
+        return {
+          local: localTracks(),
+          player: store.player,
+          account,
+          neteaseAccount,
+          version: app.getVersion(),
+          shortcuts,
+        };
       });
+      register("login", openLogin);
+      register("logout", async (source) => {
+        const service = serviceFor(source);
+        const win = loginWindows.get(service.partition);
+        loginWindows.delete(service.partition);
+        if (win && !win.isDestroyed()) win.destroy();
+        await session.fromPartition(service.partition).clearStorageData();
+        broadcast(service.event, { loggedIn: false });
+      });
+      register("account", (source) => providerFor(source).account());
+      register("neteaseLibrary", () => netease.library());
+      register("search", (query, page, source) =>
+        providerFor(source).search(query, page),
+      );
       for (const method of [
-        "account",
         "library",
         "collection",
-        "search",
         "like",
         "likeStatus",
         "createPlaylist",
@@ -366,14 +424,14 @@ else {
         "editPlaylist",
       ])
         register(method, (...args) => qq[method](...args));
-      register("collectionAll", async (kind, id, requestId) => {
+      register("collectionAll", async (kind, id, requestId, source) => {
         if (typeof requestId !== "string" || requestId.length > 100)
           throw new Error("歌单加载请求无效");
         if (activeCollection) activeCollection.cancelled = true;
         const job = { requestId, cancelled: false };
         activeCollection = job;
         try {
-          return await qq.collectionAll(
+          return await providerFor(source).collectionAll(
             kind,
             id,
             (progress) => {
@@ -393,7 +451,7 @@ else {
         if (activeCollection?.requestId === requestId)
           activeCollection.cancelled = true;
       });
-      register("playUrl", async (track) => {
+      register("playUrl", async (track, preference) => {
         if (track?.source === "local") {
           const stored = store.local.find((t) => t.id === track.id);
           if (!stored || !fs.existsSync(stored.path))
@@ -403,10 +461,12 @@ else {
             quality: "本地",
           };
         }
-        return qq.playUrl(track);
+        return providerFor(track?.source).playUrl(track, preference);
       });
       register("lyric", (track) =>
-        track?.source === "local" ? localLyric(track.id) : qq.lyric(track),
+        track?.source === "local"
+          ? localLyric(track.id)
+          : providerFor(track?.source).lyric(track),
       );
       register("importLocal", importLocal);
       register("removeLocal", (id) => {
@@ -432,6 +492,7 @@ else {
             ? player.repeat
             : "all",
           shuffle: !!player.shuffle,
+          preferredQuality: preferredQuality(player.preferredQuality),
         };
         clearTimeout(saveTimer);
         saveTimer = setTimeout(persist, 400);

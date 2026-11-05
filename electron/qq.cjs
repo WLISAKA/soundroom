@@ -1,5 +1,10 @@
 const { createHash, randomBytes } = require("node:crypto");
-const { normalizeTrack, parseLrc, httpUrl } = require("./core.cjs");
+const {
+  normalizeTrack,
+  parseLrc,
+  httpUrl,
+  qualityFallbacks,
+} = require("./core.cjs");
 
 // Signature protocol referenced from @sansenjian/qq-music-api (MIT).
 // See THIRD_PARTY_NOTICES.md for attribution and license.
@@ -373,7 +378,7 @@ class QQProvider {
       hasMore: songs.list.length === 40,
     };
   }
-  async playUrl(track) {
+  async playUrl(track, preference) {
     if (!/^[a-zA-Z0-9]+$/.test(track?.mid || ""))
       throw new Error("歌曲编号无效");
     const { uin } = await this.auth(true);
@@ -381,32 +386,37 @@ class QQProvider {
       ? track.mediaMid
       : track.mid;
     const guid = randomBytes(4).readUInt32BE().toString();
-    const data = await this.rpc("vkey.GetVkeyServer", "CgiGetVkey", {
-      guid,
-      songmid: [track.mid],
-      songtype: [0],
-      uin,
-      loginflag: 1,
-      platform: "20",
-      filename: [`M800${mediaMid}.mp3`],
-    });
-    const info = data.midurlinfo?.[0];
-    if (!info?.purl || !Array.isArray(data.sip))
-      throw new Error(
-        "当前账号或所在地区无法获得此歌曲的 HQ 播放权限，请在 QQ 音乐中确认",
-      );
-    if (
-      /^(RS|C|M)\d+.*(?:try|试听)/i.test(info.purl) ||
-      /^preview/i.test(info.purl)
-    )
-      throw new Error("平台只返回了试听资源，暂时无法完整播放");
-    const domain =
-      data.sip.find((s) => s.startsWith("https://")) ||
-      data.sip.find((s) => s.startsWith("http://"));
-    if (!domain) throw new Error("平台没有返回可用的播放地址");
-    const url = httpUrl(new URL(info.purl, domain).href);
-    if (!url) throw new Error("播放地址无效");
-    return { url, quality: "HQ · 320 kbps" };
+    const formats = {
+      lossless: ["F000", "flac", "无损 · FLAC"],
+      high: ["M800", "mp3", "HQ · 320 kbps"],
+      higher: ["O600", "ogg", "较高 · 192 kbps"],
+      standard: ["M500", "mp3", "标准 · 128 kbps"],
+    };
+    for (const level of qualityFallbacks(preference)) {
+      const [prefix, extension, quality] = formats[level];
+      const filename = `${prefix}${mediaMid}.${extension}`;
+      const data = await this.rpc("vkey.GetVkeyServer", "CgiGetVkey", {
+        guid,
+        songmid: [track.mid],
+        songtype: [0],
+        uin,
+        loginflag: 1,
+        platform: "20",
+        filename: [filename],
+      });
+      const info = data.midurlinfo?.[0];
+      if (!info?.purl || !Array.isArray(data.sip)) continue;
+      const domain =
+        data.sip.find((s) => s.startsWith("https://")) ||
+        data.sip.find((s) => s.startsWith("http://"));
+      if (!domain) continue;
+      const url = URL.parse(info.purl, domain);
+      if (url?.pathname.split("/").at(-1) === filename && httpUrl(url.href))
+        return { url: url.href, quality };
+    }
+    throw new Error(
+      "QQ 音乐未提供符合偏好音质的完整资源，请确认账号与地区权限",
+    );
   }
   async lyric(track) {
     if (!track?.mid) return [];

@@ -112,7 +112,25 @@
   padding: 12px 0;
   min-width: 0;
 }
-.desktop-lyric > strong {
+.mini-lyric-lines.is-synced {
+  animation: mini-lyric-enter 240ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+@keyframes mini-lyric-enter {
+  from {
+    opacity: 0.35;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mini-lyric-lines.is-synced {
+    animation: none;
+  }
+}
+.mini-lyric-lines > strong {
   display: block;
   font-size: 17px;
   line-height: 1.5;
@@ -122,7 +140,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.desktop-lyric > span {
+.mini-lyric-lines > span {
   display: block;
   margin-top: 5px;
   font-size: 11px;
@@ -266,7 +284,7 @@
   .mini-meta {
     padding-right: 45px;
   }
-  .desktop-lyric > strong {
+  .mini-lyric-lines > strong {
     font-size: 15px;
   }
   .mini-controls {

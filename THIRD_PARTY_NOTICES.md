@@ -2,11 +2,14 @@
 
 The QQ Music signature protocol implementation in `electron/qq.cjs` is adapted from
 `@sansenjian/qq-music-api` (https://github.com/sansenjian/qq-music-api).
-Its license is reproduced below.
+The NetEase web protocol in `electron/netease.cjs` references
+NeteaseCloudMusicApiEnhanced (https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced).
+The MIT license for both projects is reproduced below.
 
 MIT License
 
 Copyright (c) 2019
+Copyright (c) 2013-2022 Binaryify
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
