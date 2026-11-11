@@ -12,6 +12,9 @@
   --navy: #101d35;
   --muted: #8c94a4;
   --line: #e9ecf1;
+  --sidebar-width: 190px;
+  --player-height: 94px;
+  --topbar-height: 65px;
 }
 * {
   box-sizing: border-box;
@@ -185,8 +188,8 @@ input {
 }
 .app-shell {
   display: grid;
-  grid-template-columns: 190px 1fr;
-  grid-template-rows: 1fr 94px;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-rows: 1fr var(--player-height);
   height: 100vh;
   min-width: 940px;
 }
@@ -386,7 +389,7 @@ input {
   background: #fafbfc;
 }
 .topbar {
-  height: 65px;
+  height: var(--topbar-height);
   display: flex;
   align-items: center;
   gap: 20px;
@@ -1113,14 +1116,14 @@ input {
 }
 .drawer-backdrop {
   position: fixed;
-  inset: 65px 0 94px 190px;
+  inset: var(--topbar-height) 0 var(--player-height) var(--sidebar-width);
   background: #13223d18;
   z-index: 55;
 }
 .queue-drawer {
   position: fixed;
-  top: 65px;
-  bottom: 94px;
+  top: var(--topbar-height);
+  bottom: var(--player-height);
   right: 0;
   width: 365px;
   background: white;
@@ -1214,7 +1217,7 @@ input {
 }
 .full-player {
   position: fixed;
-  inset: 0 0 94px 0;
+  inset: 0 0 var(--player-height) 0;
   z-index: 40;
   background:
     radial-gradient(ellipse at 15% 70%, #e7eefb 0, transparent 60%), #f4f7fc;

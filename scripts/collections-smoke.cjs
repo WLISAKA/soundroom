@@ -41,7 +41,10 @@ async function openPlaylist(page, name) {
     .locator(".sidebar nav")
     .getByRole("button", { name: "个人歌单", exact: true })
     .click();
-  await page.locator('.playlist-grid').getByRole("button", { name, exact: true }).click();
+  await page
+    .locator(".playlist-grid")
+    .getByRole("button", { name, exact: true })
+    .click();
 }
 async function queueOf(page, count) {
   const data = await waitForValue(
@@ -53,6 +56,12 @@ async function queueOf(page, count) {
 async function main() {
   let { app, page } = await launch();
   try {
+    if (process.env.SOUNDROOM_THEME === "nordic") {
+      await page.evaluate(() => window.soundroom.setTheme("nordic"));
+      await page.waitForFunction(
+        () => document.documentElement.dataset.theme === "nordic",
+      );
+    }
     await app.evaluate(({ dialog }, file) => {
       dialog.showOpenDialog = async () => ({
         canceled: false,

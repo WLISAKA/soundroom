@@ -1,5 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 const methods = [
+  "getTheme",
+  "setTheme",
   "bootstrap",
   "login",
   "logout",
@@ -41,6 +43,7 @@ api.subscribe = (channel, callback) => {
   if (
     ![
       "playback",
+      "theme",
       "command",
       "account",
       "netease-account",

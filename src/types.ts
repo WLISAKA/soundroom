@@ -1,4 +1,5 @@
 export type OnlineSource = "qq" | "netease";
+export type Theme = "classic" | "nordic";
 export type QualityPreference = "standard" | "higher" | "high" | "lossless";
 export type Track = {
   id: string;
@@ -67,6 +68,8 @@ export type Library = {
   warnings: string[];
 };
 export interface DesktopAPI {
+  getTheme(): Promise<Theme>;
+  setTheme(theme: Theme): Promise<Theme>;
   bootstrap(): Promise<{
     local: Track[];
     player: SavedPlayer | null;
@@ -123,6 +126,7 @@ export interface DesktopAPI {
   subscribe(
     channel:
       | "playback"
+      | "theme"
       | "command"
       | "account"
       | "netease-account"

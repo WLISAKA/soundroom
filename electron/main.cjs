@@ -109,7 +109,7 @@ function loadWindow(win, mode = "") {
 }
 function secureWindow(options) {
   const win = new BrowserWindow({
-    backgroundColor: "#f6f7f9",
+    backgroundColor: store.theme === "nordic" ? "#f5f0eb" : "#f6f7f9",
     icon: path.join(__dirname, "../assets/icon.ico"),
     ...options,
     webPreferences: {
@@ -162,7 +162,7 @@ function toggleAux() {
     minWidth: 500,
     minHeight: 180,
     maxHeight: 260,
-    backgroundColor: "#101d35",
+    backgroundColor: store.theme === "nordic" ? "#f5f0eb" : "#101d35",
     frame: false,
     thickFrame: false,
     hasShadow: false,
@@ -354,6 +354,25 @@ else {
       Menu.setApplicationMenu(null);
       store = readJson(dataFile(), { local: [], player: null });
       if (!Array.isArray(store.local)) store.local = [];
+      if (store.theme !== "nordic") store.theme = "classic";
+      register("getTheme", () => store.theme);
+      register("setTheme", (theme) => {
+        if (!["classic", "nordic"].includes(theme))
+          throw new Error("配色风格无效");
+        store.theme = theme;
+        persist();
+        ownWindows().forEach((win) =>
+          win.setBackgroundColor(
+            theme === "nordic"
+              ? "#f5f0eb"
+              : win === mini
+                ? "#101d35"
+                : "#f6f7f9",
+          ),
+        );
+        broadcast("theme", theme);
+        return theme;
+      });
       const { QQProvider } = require("./qq.cjs");
       const { NeteaseProvider } = require("./netease.cjs");
       const qqSession = session.fromPartition("persist:qqmusic");

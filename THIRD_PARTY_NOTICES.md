@@ -1,5 +1,9 @@
 # Third-party notices
 
+The bundled Inter font is Copyright 2020 The Inter Project Authors
+(https://github.com/rsms/inter), distributed under the SIL Open Font License 1.1.
+The full font license is included at `assets/fonts/OFL.txt`.
+
 The QQ Music signature protocol implementation in `electron/qq.cjs` is adapted from
 `@sansenjian/qq-music-api` (https://github.com/sansenjian/qq-music-api).
 The NetEase web protocol in `electron/netease.cjs` references

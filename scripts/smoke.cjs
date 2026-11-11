@@ -6,7 +6,8 @@ const { waitForValue, waitForPlayback } = require("./test-utils.cjs");
 const root = path.join(__dirname, "..");
 const runtime = path.join(root, ".runtime", `smoke-${Date.now()}`);
 const fixtures = path.join(runtime, "fixtures");
-const screenshots = path.join(root, ".runtime", "screenshots");
+const theme = process.env.SOUNDROOM_THEME === "nordic" ? "nordic" : "classic";
+const screenshots = path.join(root, ".runtime", "screenshots-" + theme);
 fs.mkdirSync(fixtures, { recursive: true });
 fs.mkdirSync(screenshots, { recursive: true });
 function wav(name) {
@@ -56,6 +57,29 @@ async function launch() {
 async function main() {
   let { app, page } = await launch();
   try {
+    assert.equal(
+      await page.evaluate(() => window.soundroom.getTheme()),
+      "classic",
+    );
+    if (theme === "nordic") {
+      await page
+        .getByRole("button", { name: "偏好与信息", exact: true })
+        .click();
+      await page.getByRole("radio", { name: "北欧暖白" }).check();
+      await page.waitForFunction(
+        () => document.documentElement.dataset.theme === "nordic",
+      );
+      await page.locator(".modal").evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      await page.screenshot({
+        animations: "disabled",
+        path: path.join(screenshots, "settings.png"),
+      });
+      await page
+        .getByRole("button", { name: "关闭对话框", exact: true })
+        .click();
+    }
     await page.screenshot({
       animations: "disabled",
       path: path.join(screenshots, "home.png"),
@@ -114,6 +138,10 @@ async function main() {
     const miniPromise = app.waitForEvent("window");
     await page.getByRole("button", { name: "歌词小窗", exact: true }).click();
     const mini = await miniPromise;
+    await mini.waitForFunction(
+      (value) => document.documentElement.dataset.theme === value,
+      theme,
+    );
     await mini.locator(".mini-meta strong").waitFor();
     await mini.waitForFunction(
       () =>
@@ -129,6 +157,49 @@ async function main() {
     assert.equal(geometry.outer.width, geometry.content.width);
     assert.equal(geometry.outer.height, geometry.content.height);
     assert.equal(geometry.shadow, false);
+    if (theme === "nordic") {
+      const before = await page.evaluate(() => window.soundroom.getPlayback());
+      await page.evaluate(() => window.soundroom.setTheme("classic"));
+      await mini.waitForFunction(
+        () => document.documentElement.dataset.theme === "classic",
+      );
+      await page.evaluate(() => window.soundroom.setTheme("nordic"));
+      await mini.waitForFunction(
+        () => document.documentElement.dataset.theme === "nordic",
+      );
+      const after = await page.evaluate(() => window.soundroom.getPlayback());
+      assert.equal(after.track.id, before.track.id);
+      assert.equal(after.playing, true);
+      const fade = await mini
+        .locator(".mini-cover")
+        .evaluate((el) => getComputedStyle(el, "::after").backgroundImage);
+      assert.ok(
+        fade.includes("linear-gradient") && fade.includes("245, 240, 235"),
+      );
+      await mini.emulateMedia({ reducedMotion: "reduce" });
+      assert.equal(
+        await mini
+          .locator(".mini-lyric-lines")
+          .evaluate((el) => getComputedStyle(el).animationName),
+        "none",
+      );
+      await mini.emulateMedia({ reducedMotion: "no-preference" });
+      await miniWindow.evaluate((win) => win.setSize(500, 180));
+      await mini.waitForFunction(
+        () => innerWidth === 500 && innerHeight === 180,
+      );
+      const bar = await mini.locator(".mini-progress").boundingBox();
+      const meta = await mini.locator(".mini-meta").boundingBox();
+      const lyric = await mini.locator(".desktop-lyric").boundingBox();
+      const controls = await mini.locator(".mini-bottom").boundingBox();
+      assert.ok(bar.y + bar.height <= 180);
+      assert.ok(meta.y + meta.height <= lyric.y);
+      assert.ok(lyric.y + lyric.height <= controls.y);
+      await miniWindow.evaluate((win) => win.setSize(600, 196));
+      await mini.waitForFunction(
+        () => innerWidth === 600 && innerHeight === 196,
+      );
+    }
     const mode = mini.getByRole("button", { name: "切换随机播放" });
     await mode.click();
     await waitForPlayback(page, (state) => state.shuffle === true);
@@ -235,6 +306,11 @@ async function main() {
     await app.close();
     ({ app, page } = await launch());
     const saved = await page.evaluate(() => window.soundroom.bootstrap());
+    await page.waitForFunction(
+      (value) => document.documentElement.dataset.theme === value,
+      theme,
+    );
+    assert.equal(await page.evaluate(() => window.soundroom.getTheme()), theme);
     assert.equal(saved.local.length, 2);
     assert.equal(saved.player.queue.length, 2);
     assert.ok(saved.player.position >= 12);
@@ -248,12 +324,46 @@ async function main() {
     );
     assert.ok(startState.position >= 12);
     assert.equal(startState.playing, false);
+    if (theme === "nordic") {
+      const win = await app.browserWindow(page);
+      for (const [width, height] of [
+        [940, 660],
+        [1450, 900],
+      ]) {
+        await win.evaluate(
+          (win, size) => win.setSize(...size),
+          [width, height],
+        );
+        await page.waitForFunction((width) => innerWidth === width, width);
+        assert.equal(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth > innerWidth,
+          ),
+          false,
+        );
+        const accountBounds = await page
+          .locator(".account-button")
+          .boundingBox();
+        const sidebarBounds = await page.locator(".sidebar").boundingBox();
+        assert.ok(
+          accountBounds.y + accountBounds.height <=
+            sidebarBounds.y + sidebarBounds.height,
+        );
+        await page.getByRole("button", { name: "音乐库", exact: true }).click();
+        await page.screenshot({
+          animations: "disabled",
+          path: path.join(screenshots, `home-${width}.png`),
+        });
+      }
+    }
     assert.deepEqual(errors, []);
     console.log(
       JSON.stringify(
         {
           result: "PASS",
+          theme,
           checks: [
+            "appearance selection, shared window theme and restart persistence",
             "desktop startup",
             "native file import and metadata",
             "actual local audio playback",

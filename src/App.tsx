@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { usePlayer } from "./player";
 import { useVirtualList } from "./useVirtualList";
+import { useTheme } from "./theme";
 import type {
   Account,
   Collection,
@@ -143,6 +144,7 @@ export default function App() {
   return <DesktopApp />;
 }
 function DesktopApp() {
+  const { theme, setTheme } = useTheme();
   const [toast, setToast] = useState("");
   const notify = useCallback((message: string) => setToast(message), []);
   const player = usePlayer(notify);
@@ -381,7 +383,7 @@ function DesktopApp() {
     mainScrollRef,
     trackTableRef,
     `${route.kind}:${route.id}:${route.name}`,
-    65,
+    theme === "nordic" ? 80 : 65,
     39,
   );
   const queueWindow = useVirtualList(
@@ -389,7 +391,7 @@ function DesktopApp() {
     queueScrollRef,
     queueRowsRef,
     String(queueOpen),
-    54,
+    theme === "nordic" ? 64 : 54,
   );
   useEffect(() => {
     if (!account.loggedIn) return;
@@ -1756,6 +1758,49 @@ function DesktopApp() {
                 <div className="settings-brand">
                   声间 <span>SOUNDROOM / {version}</span>
                 </div>
+                <fieldset className="theme-picker">
+                  <legend>配色风格</legend>
+                  <div className="theme-options">
+                    {(
+                      [
+                        {
+                          id: "classic",
+                          name: "经典蓝",
+                          description: "深蓝侧栏 · 清晰明快",
+                        },
+                        {
+                          id: "nordic",
+                          name: "北欧暖白",
+                          description: "暖白与苔绿 · 轻缓留白",
+                        },
+                      ] as const
+                    ).map((option) => (
+                      <label className="theme-option" key={option.id}>
+                        <input
+                          type="radio"
+                          name="theme"
+                          value={option.id}
+                          checked={theme === option.id}
+                          onChange={() =>
+                            void setTheme(option.id).catch((e) =>
+                              notify(e.message),
+                            )
+                          }
+                        />
+                        <span
+                          className={`theme-swatch theme-swatch-${option.id}`}
+                          aria-hidden="true"
+                        >
+                          <i />
+                          <i />
+                          <i />
+                        </span>
+                        <strong>{option.name}</strong>
+                        <small>{option.description}</small>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
                 <div className="setting-row">
                   <span>在线偏好音质</span>
                   <select
