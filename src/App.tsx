@@ -47,6 +47,11 @@ import {
 import { usePlayer } from "./player";
 import { useVirtualList } from "./useVirtualList";
 import { useTheme } from "./theme";
+import {
+  CollectionSkeleton,
+  trackGlassReflection,
+  usePanelOpening,
+} from "./collection-motion";
 import type {
   Account,
   Collection,
@@ -173,6 +178,13 @@ function DesktopApp() {
     total: number | null;
   } | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
+  const openingQueue = usePanelOpening(queueOpen, queueOpen);
+  const openingRoute = usePanelOpening(
+    route,
+    !["home", "local"].includes(route.kind),
+  );
+  const glassHover =
+    theme === "classic" ? { onPointerMove: trackGlassReflection } : {};
   const [playerOpen, setPlayerOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [dialogName, setDialogName] = useState("");
@@ -377,20 +389,25 @@ function DesktopApp() {
       activeCollectionRequest.current = null;
     };
   }, [route, routeAccount]);
-  const tracks = route.kind === "local" ? local : collection?.tracks || [];
+  const tracks =
+    route.kind === "local"
+      ? local
+      : openingRoute
+        ? []
+        : collection?.tracks || [];
   const trackWindow = useVirtualList(
     tracks,
     mainScrollRef,
     trackTableRef,
-    `${route.kind}:${route.id}:${route.name}`,
+    `${route.kind}:${route.source}:${route.id}:${route.name}`,
     theme === "nordic" ? 80 : 65,
     39,
   );
   const queueWindow = useVirtualList(
-    player.queue,
+    openingQueue ? [] : player.queue,
     queueScrollRef,
     queueRowsRef,
-    String(queueOpen),
+    String(queueOpen && !openingQueue),
     theme === "nordic" ? 64 : 54,
   );
   useEffect(() => {
@@ -747,7 +764,7 @@ function DesktopApp() {
     return (
       <div className="playlist-grid">
         {list.map((p) => (
-          <div className="playlist-card" key={p.id}>
+          <div className="playlist-card" key={p.id} {...glassHover}>
             <button
               className="playlist-art"
               onClick={() =>
@@ -997,9 +1014,9 @@ function DesktopApp() {
           </div>
         </header>
         <main
-          className="main-content"
+          className={`main-content ${route.kind === "home" ? "" : "collection-view"}`}
           ref={mainScrollRef}
-          key={`${route.kind}:${route.id}:${route.name}`}
+          key={`${route.kind}:${route.source}:${route.id}:${route.name}`}
         >
           <div className="page-heading">
             <div>
@@ -1053,14 +1070,20 @@ function DesktopApp() {
           {route.kind === "home" ? (
             <>
               <div className="quick-links" aria-label="音乐库入口">
-                <button onClick={() => navigate({ kind: "liked" })}>
+                <button
+                  {...glassHover}
+                  onClick={() => navigate({ kind: "liked" })}
+                >
                   <span className="quick-icon">
                     <Heart size={23} strokeWidth={1.4} />
                   </span>
                   <strong>我的喜欢</strong>
                   <ArrowUpRight size={17} />
                 </button>
-                <button onClick={() => navigate({ kind: "created" })}>
+                <button
+                  {...glassHover}
+                  onClick={() => navigate({ kind: "created" })}
+                >
                   <span className="quick-icon">
                     <ListMusic size={23} strokeWidth={1.4} />
                   </span>
@@ -1070,7 +1093,10 @@ function DesktopApp() {
                   )}
                   <ArrowUpRight size={17} />
                 </button>
-                <button onClick={() => navigate({ kind: "collected" })}>
+                <button
+                  {...glassHover}
+                  onClick={() => navigate({ kind: "collected" })}
+                >
                   <span className="quick-icon">
                     <Bookmark size={23} strokeWidth={1.4} />
                   </span>
@@ -1080,7 +1106,10 @@ function DesktopApp() {
                   )}
                   <ArrowUpRight size={17} />
                 </button>
-                <button onClick={() => navigate({ kind: "local" })}>
+                <button
+                  {...glassHover}
+                  onClick={() => navigate({ kind: "local" })}
+                >
                   <span className="quick-icon">
                     <Disc3 size={23} strokeWidth={1.4} />
                   </span>
@@ -1110,13 +1139,12 @@ function DesktopApp() {
             ) : (
               loginEmpty()
             )
+          ) : (route.kind === "netease-library" && (openingRoute || busy)) ||
+            (["created", "collected"].includes(route.kind) &&
+              (openingRoute || (libraryBusy && !cards.length))) ? (
+            <CollectionSkeleton cards label="正在读取歌单" />
           ) : route.kind === "netease-library" ? (
-            busy ? (
-              <div className="loading-state">
-                <LoaderCircle className="spin" size={22} />
-                正在读取歌单
-              </div>
-            ) : error ? (
+            error ? (
               <div className="error-banner">{error}</div>
             ) : neteasePlaylists.length ? (
               renderCards(neteasePlaylists, "netease")
@@ -1132,12 +1160,7 @@ function DesktopApp() {
                   {library.warnings.join("；")}
                 </div>
               )}
-              {libraryBusy && !cards.length ? (
-                <div className="loading-state">
-                  <LoaderCircle className="spin" size={22} />
-                  正在读取歌单
-                </div>
-              ) : cards.length ? (
+              {cards.length ? (
                 renderCards(cards)
               ) : (
                 <div className="empty-state">
@@ -1166,6 +1189,14 @@ function DesktopApp() {
                 </div>
               )}
             </>
+          ) : openingRoute || (busy && !tracks.length) ? (
+            <CollectionSkeleton
+              label={
+                loadingProgress
+                  ? `正在读取全部歌曲：${loadingProgress.loaded}${loadingProgress.total !== null ? " / " + loadingProgress.total : ""} 首`
+                  : "正在读取音乐"
+              }
+            />
           ) : (
             <>
               {collection?.cover &&
@@ -1480,7 +1511,7 @@ function DesktopApp() {
                 <X size={20} />
               </IconButton>
             </div>
-            {player.queue.length > 0 && (
+            {!openingQueue && player.queue.length > 0 && (
               <button
                 className="text-button clear-queue"
                 onClick={player.clear}
@@ -1490,8 +1521,13 @@ function DesktopApp() {
               </button>
             )}
             <div className="queue-list" ref={queueScrollRef}>
-              <div ref={queueRowsRef}>
-                {player.queue.length ? (
+              <div
+                ref={queueRowsRef}
+                className={openingQueue ? "" : "queue-content"}
+              >
+                {openingQueue ? (
+                  <CollectionSkeleton label="正在展开播放队列" />
+                ) : player.queue.length ? (
                   <>
                     {queueWindow.before > 0 && (
                       <div
@@ -1765,8 +1801,8 @@ function DesktopApp() {
                       [
                         {
                           id: "classic",
-                          name: "经典蓝",
-                          description: "深蓝侧栏 · 清晰明快",
+                          name: "经典玻璃",
+                          description: "深墨夜色 · 香槟金",
                         },
                         {
                           id: "nordic",

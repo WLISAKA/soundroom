@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   Music2,
@@ -14,6 +14,55 @@ import type { Playback } from "./types";
 
 const formatTime = (seconds = 0) =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+
+const MiniLyrics = memo(function MiniLyrics({
+  index,
+  current,
+  next,
+  hasTrack,
+}: {
+  index: number;
+  current: string;
+  next: string;
+  hasTrack: boolean;
+}) {
+  const previous = useRef({ index, current, next });
+  const advances =
+    index === previous.current.index + 1 &&
+    current !== "" &&
+    current === previous.current.next;
+  useLayoutEffect(() => {
+    previous.current = { index, current, next };
+  }, [index, current, next]);
+  return (
+    <div className="desktop-lyric" aria-live="off">
+      <div className="mini-lyric-lines">
+        {advances && previous.current.current && (
+          <span
+            key={index - 1}
+            className="mini-lyric-current mini-lyric-leaving"
+            aria-hidden="true"
+          >
+            {previous.current.current}
+          </span>
+        )}
+        <span
+          key={index}
+          className={`mini-lyric-current${advances ? " mini-lyric-rising" : ""}`}
+          title={current}
+        >
+          {current || (next ? "\u00a0" : hasTrack ? "暂无同步歌词" : "—")}
+        </span>
+        <span
+          key={index + 1}
+          className={`mini-lyric-next${advances && next ? " mini-lyric-arriving" : ""}`}
+        >
+          {next || "\u00a0"}
+        </span>
+      </div>
+    </div>
+  );
+});
 
 export function Auxiliary() {
   const [state, setState] = useState<Playback>({});
@@ -53,24 +102,13 @@ export function Auxiliary() {
           </strong>
           <span>{state.track?.artist || "未选择歌曲"}</span>
         </div>
-        <div className="desktop-lyric" aria-live="off">
-          <div
-            className={
-              state.lyric ? "mini-lyric-lines is-synced" : "mini-lyric-lines"
-            }
-            key={`${state.track?.id || ""}:${state.lyricIndex ?? -1}:${state.lyric || ""}`}
-          >
-            <strong title={state.lyric}>
-              {state.lyric ||
-                (state.nextLyric
-                  ? "\u00a0"
-                  : state.track
-                    ? "暂无同步歌词"
-                    : "—")}
-            </strong>
-            <span>{state.nextLyric || "\u00a0"}</span>
-          </div>
-        </div>
+        <MiniLyrics
+          key={state.track?.id}
+          index={state.lyricIndex ?? -1}
+          current={state.lyric || ""}
+          next={state.nextLyric || ""}
+          hasTrack={!!state.track}
+        />
         <div className="mini-bottom">
           <div className="mini-controls">
             <button

@@ -1,0 +1,425 @@
+:root[data-theme="classic"] {
+  color-scheme: dark;
+  --night: #0b1322;
+  --night-deep: #060a13;
+  --night-steel: #16233a;
+  --moonlight: #9ab0cb;
+  --blue: #e4b863;
+  --muted: var(--moonlight);
+  --glass: #ffffff14;
+  --glass-hover: #ffffff24;
+  --line: #ffffff26;
+  --glass-shadow:
+    0 16px 40px #03071280, inset 0 1px #ffffff38, inset 0 -1px #02061059;
+  --glass-motion: 500ms cubic-bezier(0.16, 1, 0.3, 1);
+  --night-light:
+    radial-gradient(ellipse at 32% 5%, #33517a87, transparent 50%),
+    radial-gradient(ellipse at 95% 54%, #284c7159, transparent 55%),
+    radial-gradient(ellipse at 55% 111%, #71583b57, transparent 47%);
+  --topbar-height: 72px;
+  background: var(--night);
+  color: #f0f4fa;
+  font-family:
+    "Inter", "Segoe UI Variable", "Microsoft YaHei UI", system-ui, sans-serif;
+}
+
+[data-theme="classic"] .app-shell,
+[data-theme="classic"] .full-player {
+  background: var(--night-light), var(--night-deep);
+}
+[data-theme="classic"] .workspace {
+  background: transparent;
+}
+[data-theme="classic"] .sidebar,
+[data-theme="classic"] .topbar,
+[data-theme="classic"] .player-bar {
+  background: #ffffff0a;
+  border-color: var(--line);
+  backdrop-filter: blur(40px) saturate(180%);
+}
+[data-theme="classic"] .sidebar {
+  border-right: 1px solid var(--line);
+  box-shadow: inset -1px 0 #060a1359;
+}
+[data-theme="classic"] .sidebar nav > button.nav-active,
+[data-theme="classic"] .account-avatar,
+[data-theme="classic"] .account-avatar.connected {
+  background: #ffffff16;
+  color: #f4f7fb;
+}
+[data-theme="classic"] .brand-symbol > i,
+[data-theme="classic"] .nav-active > i,
+[data-theme="classic"] .playlist-dot {
+  background: #7c9cc4;
+}
+[data-theme="classic"] .sidebar nav > button,
+[data-theme="classic"] .icon-button,
+[data-theme="classic"] .transport-buttons > .icon-button:nth-child(n),
+[data-theme="classic"]
+  :is(
+    .side-section-label,
+    .side-playlists > p,
+    .side-playlists > button,
+    .account-button small,
+    .account-button > svg,
+    .eyebrow,
+    .breadcrumb,
+    .brand-en,
+    .text-button
+  ) {
+  color: var(--moonlight);
+}
+[data-theme="classic"] .icon-button.is-active,
+[data-theme="classic"] .transport-buttons > .icon-button.is-active {
+  color: #f0f4fa;
+  background: #ffffff16;
+}
+[data-theme="classic"] .icon-button:hover:not(:disabled),
+[data-theme="classic"] .sidebar .icon-button:hover,
+[data-theme="classic"] .window-actions .window-close:hover {
+  background: var(--glass-hover);
+  color: #fff;
+}
+[data-theme="classic"] .main-content {
+  padding-inline: max(32px, calc((100% - 1280px) / 2));
+}
+[data-theme="classic"] .page-heading h1 {
+  font-size: 40px;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+[data-theme="classic"] .quick-links {
+  gap: 24px;
+  max-width: 1280px;
+}
+[data-theme="classic"] :is(.quick-links > button, .playlist-card) {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(40px) saturate(180%);
+  transition:
+    transform var(--glass-motion),
+    background var(--glass-motion),
+    border-color var(--glass-motion),
+    box-shadow var(--glass-motion);
+}
+[data-theme="classic"] .quick-links > button {
+  padding: 32px;
+  min-height: 130px;
+  gap: 16px;
+}
+[data-theme="classic"] .quick-links strong {
+  font-size: 18px;
+  font-weight: 500;
+}
+[data-theme="classic"]
+  :is(
+    .quick-icon,
+    .quick-links small,
+    .quick-links > button > svg,
+    .playlist-card > p
+  ) {
+  color: var(--moonlight);
+}
+[data-theme="classic"] .playlist-grid {
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+}
+[data-theme="classic"] .playlist-card {
+  padding: 12px;
+}
+[data-theme="classic"] .playlist-art,
+[data-theme="classic"] .playlist-art .cover {
+  border-radius: 16px;
+}
+[data-theme="classic"] .playlist-art:hover .cover {
+  transform: none;
+}
+[data-theme="classic"] .card-name {
+  font-size: 13px;
+}
+[data-theme="classic"] .card-play {
+  background: var(--night-steel);
+  color: #fff;
+}
+[data-theme="classic"]
+  :is(.quick-links > button, .playlist-card):is(:hover, :focus-within) {
+  background: var(--glass-hover);
+  border-color: #ffffff4d;
+  box-shadow:
+    0 24px 64px #03071299,
+    inset 0 1px #ffffff52,
+    inset 0 -1px #02061059;
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  [data-theme="classic"] :is(.quick-links > button, .playlist-card):hover {
+    transform: perspective(740px) rotateX(var(--tilt-x, 0deg))
+      rotateY(var(--tilt-y, 0deg));
+  }
+  [data-theme="classic"] :is(.quick-links > button, .playlist-card)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: radial-gradient(
+      ellipse at var(--shine-x, 50%) var(--shine-y, 50%),
+      #ffffff37,
+      transparent 62%
+    );
+    opacity: 0;
+    transition: opacity var(--glass-motion);
+  }
+  [data-theme="classic"]
+    :is(.quick-links > button, .playlist-card):hover::after {
+    opacity: 1;
+  }
+}
+
+[data-theme="classic"] :is(button, input, select):focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+[data-theme="classic"] .search-box,
+[data-theme="classic"] .field-label > input,
+[data-theme="classic"] .setting-row select {
+  color: #f0f4fa;
+  background: #ffffff0a;
+  border-color: var(--line);
+  border-radius: 14px;
+  transition:
+    border-color var(--glass-motion),
+    box-shadow var(--glass-motion);
+}
+[data-theme="classic"]
+  :is(.search-box, .field-label, .setting-row):focus-within
+  :is(input:not([type="radio"]), select) {
+  color: #fff;
+}
+[data-theme="classic"] .search-box :is(input, select) {
+  color: var(--moonlight);
+}
+[data-theme="classic"] .search-box select {
+  border-color: var(--line);
+}
+[data-theme="classic"] .search-box input:focus-visible {
+  outline: none;
+}
+[data-theme="classic"]
+  :is(.search-box:focus-within, .field-label > input:focus-visible) {
+  border-color: #ffffff66;
+  box-shadow: 0 0 0 3px #ffffff14;
+}
+[data-theme="classic"] select option {
+  background: var(--night-steel);
+  color: #f0f4fa;
+}
+[data-theme="classic"] :is(.primary, .play-button, .secondary, .danger) {
+  border-radius: 999px;
+  transition:
+    background var(--glass-motion),
+    box-shadow var(--glass-motion),
+    transform var(--glass-motion);
+}
+[data-theme="classic"] :is(.primary, .play-button) {
+  background: var(--blue);
+  color: var(--night-deep);
+  box-shadow: none;
+}
+[data-theme="classic"] :is(.primary, .play-button):hover:not(:disabled) {
+  background: #e4b863ec;
+  box-shadow: 0 9px 27px #e4b86340;
+  transform: translateY(-1px);
+}
+[data-theme="classic"] .secondary {
+  background: var(--glass);
+  border-color: var(--line);
+  color: #edf3fb;
+}
+[data-theme="classic"] .secondary:hover:not(:disabled) {
+  background: var(--glass-hover);
+  border-color: #ffffff4d;
+}
+[data-theme="classic"] :is(.cover, .empty-icon) {
+  background: #ffffff12;
+  color: #a0b8d4;
+  border-color: var(--line);
+}
+[data-theme="classic"] :is(.empty-state > h3, .collection-banner p) {
+  color: #edf3fb;
+}
+[data-theme="classic"]
+  :is(
+    .empty-state > p,
+    .loading-state,
+    .collection-banner small,
+    .list-toolbar > span,
+    .track-head,
+    .track-time,
+    .track-subtitle,
+    .album-link,
+    .now-meta > span,
+    .progress-row > span,
+    .queue-track small
+  ) {
+  color: var(--moonlight);
+}
+[data-theme="classic"] .track-subtitle small {
+  border-color: var(--line);
+}
+[data-theme="classic"] .track-row:nth-child(odd) {
+  background: #ffffff06;
+}
+[data-theme="classic"] :is(.track-row, .queue-item):hover {
+  background: var(--glass);
+}
+[data-theme="classic"] :is(.track-row, .queue-item).selected {
+  background: #ffffff14;
+}
+[data-theme="classic"] .track-row.selected .track-title {
+  color: #fff;
+}
+[data-theme="classic"] :is(.error-banner, .dialog-error) {
+  background: #d9877017;
+  border-color: #e498814d;
+  color: #ffc4af;
+}
+[data-theme="classic"] .progress-row > input {
+  background: linear-gradient(
+    to right,
+    #a4b8cf var(--progress),
+    #ffffff24 var(--progress)
+  );
+}
+[data-theme="classic"] .progress-row > input::-webkit-slider-thumb {
+  background: #a4b8cf;
+}
+[data-theme="classic"] .quality {
+  color: var(--blue);
+  border-color: #e4b86366;
+}
+[data-theme="classic"] .drawer-backdrop {
+  background: #060a1359;
+}
+[data-theme="classic"] :is(.queue-drawer, .modal, .popover, .toast) {
+  background: linear-gradient(var(--glass), var(--glass)), #0b1322df;
+  border: 1px solid var(--line);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(40px) saturate(180%);
+}
+[data-theme="classic"] .queue-drawer {
+  border-radius: 24px 0 0 24px;
+}
+[data-theme="classic"] .modal {
+  border-radius: 28px;
+}
+[data-theme="classic"] .modal-backdrop {
+  background: #060a135e;
+}
+[data-theme="classic"] :is(.popover, .toast) {
+  border-radius: 16px;
+}
+[data-theme="classic"]
+  :is(.popover > button, .dialog-playlists > button):hover {
+  background: var(--glass-hover);
+  color: #fff;
+}
+[data-theme="classic"]
+  :is(
+    .theme-picker legend,
+    .theme-option small,
+    .field-label,
+    .settings-note,
+    .settings-brand > span,
+    .setting-row > span,
+    .modal-description,
+    .quit-app
+  ) {
+  color: var(--moonlight);
+}
+[data-theme="classic"] .setting-row {
+  border-color: var(--line);
+}
+[data-theme="classic"] .setting-row > strong {
+  color: #edf3fb;
+}
+[data-theme="classic"] .theme-option {
+  border-radius: 16px;
+  background: #ffffff0a;
+}
+[data-theme="classic"] .theme-option:has(input:checked) {
+  background: #ffffff16;
+  border-color: #e4b86385;
+}
+[data-theme="classic"]
+  :is(.full-artwork > p, .full-artwork > small, .lyric-placeholder) {
+  color: var(--moonlight);
+}
+[data-theme="classic"] .lyric-line {
+  color: #acbdd1;
+}
+[data-theme="classic"] .lyric-line:is(.current, :hover) {
+  color: #fff;
+}
+[data-theme="classic"] ::-webkit-scrollbar-thumb {
+  background: #9ab0cb55;
+}
+[data-theme="classic"] .boot-screen {
+  background: var(--night);
+  color: var(--moonlight);
+}
+
+[data-theme="classic"] .aux {
+  --mini-surface: #101b2e;
+  --lyric-current: #f0f4fa;
+  --lyric-next: #9ab0cb;
+  background:
+    radial-gradient(ellipse at right top, #33517a55, transparent 56%),
+    var(--mini-surface);
+}
+[data-theme="classic"] .mini-cover::after {
+  background: linear-gradient(
+    90deg,
+    #101b2e00 0%,
+    #101b2e4d 35%,
+    var(--mini-surface) 100%
+  );
+}
+[data-theme="classic"] .mini-controls > .mini-play {
+  background: var(--blue);
+  color: var(--night-deep);
+}
+[data-theme="classic"] .mini-controls > .mini-play:hover {
+  background: #eace92;
+}
+[data-theme="classic"] .mini-controls > .mini-mode.is-active {
+  color: #fff;
+}
+[data-theme="classic"] .mini-progress {
+  background: linear-gradient(
+    to right,
+    #a4b8cf var(--progress),
+    #ffffff26 var(--progress)
+  );
+}
+
+@media (max-width: 1100px) {
+  [data-theme="classic"] .quick-links {
+    gap: 16px;
+  }
+  [data-theme="classic"] .quick-links > button {
+    padding: 24px;
+    min-height: 110px;
+  }
+  [data-theme="classic"] .page-heading h1 {
+    font-size: 34px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="classic"] :is(.quick-links > button, .playlist-card) {
+    transition: none;
+  }
+}

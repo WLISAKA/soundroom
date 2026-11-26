@@ -6,6 +6,8 @@ import { ThemeProvider } from "./theme";
 import "./styles.css";
 import "./mini.css";
 import "./themes.css";
+import "./glass.css";
+import "./collection-motion.css";
 const mode = location.hash.slice(1);
 if (mode === "mini" || mode === "lyrics") document.title = "歌词小窗";
 createRoot(document.getElementById("root")!).render(

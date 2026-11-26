@@ -92,6 +92,27 @@ async function main() {
         .count(),
       0,
     );
+    if (theme === "classic") {
+      const card = page.locator(".quick-links > button").first();
+      const bounds = await card.boundingBox();
+      const shineX = () =>
+        card.evaluate((el) =>
+          parseFloat(el.style.getPropertyValue("--shine-x")),
+        );
+      await page.mouse.move(bounds.x + 40, bounds.y + 28);
+      await waitForValue(shineX, (x) => x < 30);
+      await page.mouse.move(
+        bounds.x + bounds.width - 40,
+        bounds.y + bounds.height - 28,
+      );
+      await waitForValue(shineX, (x) => x > 70);
+      await page.waitForFunction(
+        () =>
+          getComputedStyle(document.querySelector(".quick-links > button"))
+            .transform !== "none",
+      );
+      await page.mouse.move(5, 90);
+    }
     await app.evaluate(({ dialog }, selectedFiles) => {
       dialog.showOpenDialog = async () => ({
         canceled: false,
@@ -179,7 +200,7 @@ async function main() {
       await mini.emulateMedia({ reducedMotion: "reduce" });
       assert.equal(
         await mini
-          .locator(".mini-lyric-lines")
+          .locator(".mini-lyric-current:not(.mini-lyric-leaving)")
           .evaluate((el) => getComputedStyle(el).animationName),
         "none",
       );
@@ -261,12 +282,28 @@ async function main() {
     await mini.getByRole("slider", { name: "小窗播放进度" }).focus();
     await mini.getByRole("slider", { name: "小窗播放进度" }).press("Home");
     await waitForPlayback(page, (state) => state.position < 2);
+    await mini.waitForFunction(
+      () =>
+        document.querySelector(".mini-lyric-next")?.textContent ===
+        "喜欢的声音，就在这里",
+    );
     await page.evaluate(() => window.soundroom.command("seek", 8));
     await mini.waitForFunction(
       () =>
-        document.querySelector(".desktop-lyric strong")?.textContent ===
-        "喜欢的声音，就在这里",
+        document.querySelector(".mini-lyric-current:not(.mini-lyric-leaving)")
+          ?.textContent === "喜欢的声音，就在这里",
     );
+    assert.equal(
+      await mini
+        .locator(".mini-lyric-rising")
+        .evaluate((el) => getComputedStyle(el).animationName),
+      "mini-lyric-rise",
+    );
+    await mini
+      .locator(".mini-lyric-leaving")
+      .evaluate((el) =>
+        Promise.all(el.getAnimations().map((animation) => animation.finished)),
+      );
     await mini.evaluate(() => document.activeElement?.blur());
     await mini.screenshot({
       animations: "disabled",

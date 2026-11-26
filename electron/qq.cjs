@@ -35,11 +35,13 @@ function check(payload, write = false) {
   ].filter((v) => v !== undefined);
   if (codes.some((v) => Number(v) !== 0)) {
     const code = codes.find((v) => Number(v) !== 0);
-    throw new Error(
+    const error = new Error(
       [301, 1000, 2000].includes(Number(code))
         ? `登录状态失效或接口要求重新验证，请重新登录（${code}）`
         : `QQ 音乐暂时无法完成操作（${code}）`,
     );
+    error.providerCode = Number(code);
+    throw error;
   }
   if (write && payload?.retCode === undefined)
     throw new Error("QQ 音乐未确认写入，请刷新后检查结果");
@@ -386,33 +388,63 @@ class QQProvider {
       ? track.mediaMid
       : track.mid;
     const guid = randomBytes(4).readUInt32BE().toString();
-    const formats = {
-      lossless: ["F000", "flac", "无损 · FLAC"],
-      high: ["M800", "mp3", "HQ · 320 kbps"],
-      higher: ["O600", "ogg", "较高 · 192 kbps"],
-      standard: ["M500", "mp3", "标准 · 128 kbps"],
-    };
-    for (const level of qualityFallbacks(preference)) {
-      const [prefix, extension, quality] = formats[level];
-      const filename = `${prefix}${mediaMid}.${extension}`;
-      const data = await this.rpc("vkey.GetVkeyServer", "CgiGetVkey", {
-        guid,
-        songmid: [track.mid],
-        songtype: [0],
-        uin,
-        loginflag: 1,
-        platform: "20",
-        filename: [filename],
-      });
+    const formats = [
+      ["lossless", "F000", "flac", "无损 · FLAC"],
+      ["high", "M800", "mp3", "HQ · 320 kbps"],
+      ["high", "O800", "ogg", "HQ · 320 kbps"],
+      ["higher", "O600", "ogg", "较高 · 192 kbps"],
+      ["higher", "C600", "m4a", "较高 · 192 kbps"],
+      ["standard", "M500", "mp3", "标准 · 128 kbps"],
+      ["standard", "C400", "m4a", "基础 · 96 kbps"],
+    ];
+    const allowed = qualityFallbacks(preference);
+    const candidates = formats.filter(([level]) => allowed.includes(level));
+    let fallback;
+    for (const [index, [level, prefix, extension]] of candidates.entries()) {
+      if (fallback?.index === index) return fallback.stream;
+      let data;
+      try {
+        data = await this.rpc("vkey.GetVkeyServer", "CgiGetVkey", {
+          guid,
+          songmid: [track.mid],
+          songtype: [0],
+          uin,
+          loginflag: 1,
+          platform: "20",
+          filename: [`${prefix}${mediaMid}.${extension}`],
+        });
+      } catch (error) {
+        // A rejected format can be followed by an available one.
+        if (
+          !error.providerCode ||
+          [301, 1000, 2000].includes(error.providerCode)
+        )
+          throw error;
+        continue;
+      }
       const info = data.midurlinfo?.[0];
-      if (!info?.purl || !Array.isArray(data.sip)) continue;
+      if (!info?.purl || info.ekey || info.freeTrialInfo) continue;
+      const domains = Array.isArray(data.sip)
+        ? data.sip.filter((url) => typeof url === "string")
+        : [];
       const domain =
-        data.sip.find((s) => s.startsWith("https://")) ||
-        data.sip.find((s) => s.startsWith("http://"));
-      if (!domain) continue;
+        domains.find((url) => url.startsWith("https://")) ||
+        domains.find((url) => url.startsWith("http://"));
       const url = URL.parse(info.purl, domain);
-      if (url?.pathname.split("/").at(-1) === filename && httpUrl(url.href))
-        return { url: url.href, quality };
+      if (!httpUrl(url?.href)) continue;
+      const filename = url.pathname.split("/").at(-1);
+      const actual = candidates.findIndex(
+        ([tier, code, ext]) =>
+          allowed.indexOf(tier) >= allowed.indexOf(level) &&
+          filename.startsWith(code) &&
+          filename.endsWith(`.${ext}`),
+      );
+      if (actual < 0) continue;
+      const [qualityLevel, , , quality] = candidates[actual];
+      const stream = { url: url.href, quality, qualityLevel };
+      if (qualityLevel === level) return stream;
+      if (!fallback || actual < fallback.index)
+        fallback = { index: actual, stream };
     }
     throw new Error(
       "QQ 音乐未提供符合偏好音质的完整资源，请确认账号与地区权限",

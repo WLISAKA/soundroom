@@ -127,8 +127,11 @@ class NeteaseProvider {
     if ([301, -462].includes(result?.code))
       throw new Error("网易云音乐登录已失效，请重新登录");
     if (result?.code !== 200)
-      throw new Error(
-        `网易云音乐暂时无法完成操作（${Number(result?.code) || "响应异常"}）`,
+      throw Object.assign(
+        new Error(
+          `网易云音乐暂时无法完成操作（${Number(result?.code) || "响应异常"}）`,
+        ),
+        { providerCode: Number(result?.code) },
       );
     return result;
   }
@@ -298,16 +301,22 @@ class NeteaseProvider {
     const candidates = new Map();
     for (const [index, level] of allowed.entries()) {
       if (candidates.has(level)) return candidates.get(level);
-      const { data } = await this.request(
-        "song/enhance/player/url/v1",
-        {
-          ids: JSON.stringify([Number(track.songId)]),
-          level,
-          encodeType: "flac",
-        },
-        auth,
-        true,
-      );
+      let data;
+      try {
+        ({ data } = await this.request(
+          "song/enhance/player/url/v1",
+          {
+            ids: JSON.stringify([Number(track.songId)]),
+            level,
+            encodeType: "flac",
+          },
+          auth,
+          true,
+        ));
+      } catch (error) {
+        if (!error.providerCode) throw error;
+        continue;
+      }
       const stream = data?.[0];
       const url = httpUrl(stream?.url);
       if (
@@ -316,7 +325,10 @@ class NeteaseProvider {
         !stream.freeTrialInfo &&
         allowed.indexOf(stream.level) >= index
       ) {
-        const result = { url, quality: labels[stream.level] };
+        const qualityLevel = Object.keys(levels).find(
+          (key) => levels[key] === stream.level,
+        );
+        const result = { url, quality: labels[stream.level], qualityLevel };
         if (stream.level === level) return result;
         candidates.set(stream.level, result);
       }

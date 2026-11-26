@@ -1,0 +1,151 @@
+:root {
+  --reveal-motion: 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  --skeleton-fill: #eae3da;
+  --skeleton-card: #ffffff80;
+  --skeleton-light: #ffffffad;
+}
+[data-theme="classic"] {
+  --skeleton-fill: #ffffff14;
+  --skeleton-card: #ffffff09;
+  --skeleton-light: #b7cee62b;
+}
+.collection-view {
+  animation: collection-open var(--reveal-motion);
+}
+.queue-drawer {
+  animation: queue-reveal var(--reveal-motion);
+}
+.drawer-backdrop {
+  animation: collection-reveal var(--reveal-motion);
+}
+.collection-view
+  > :is(
+    .playlist-grid,
+    .collection-banner,
+    .list-toolbar,
+    .track-table,
+    .empty-state,
+    .error-banner
+  ),
+.queue-content {
+  animation: collection-reveal var(--reveal-motion);
+}
+.collection-placeholder .loading-state {
+  justify-content: flex-start;
+  padding: 0 0 16px;
+}
+.queue-list .collection-placeholder {
+  padding: 6px;
+}
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  gap: 16px;
+}
+.skeleton-list {
+  display: grid;
+  gap: 8px;
+}
+.skeleton-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--skeleton-card);
+}
+.skeleton-card::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 28%,
+    var(--skeleton-light),
+    transparent 72%
+  );
+  animation: skeleton-sweep 1.35s ease-in-out -0.4s infinite;
+}
+.skeleton-card i {
+  display: block;
+  border-radius: 4px;
+  background: var(--skeleton-fill);
+}
+.skeleton-card > i {
+  flex: 0 0 auto;
+  width: 38px;
+  aspect-ratio: 1;
+}
+.skeleton-card > span {
+  width: min(48%, 245px);
+}
+.skeleton-card > span > i {
+  height: 9px;
+  margin-block: 6px;
+}
+.skeleton-card > span > i:last-child {
+  width: 58%;
+}
+.skeleton-grid .skeleton-card {
+  display: block;
+}
+.skeleton-grid .skeleton-card > i {
+  width: 100%;
+}
+.skeleton-grid .skeleton-card > span {
+  width: 70%;
+  display: block;
+  margin-top: 12px;
+}
+[data-theme="nordic"] .skeleton-card,
+[data-theme="nordic"] .skeleton-card i {
+  border-radius: 2px;
+}
+@keyframes collection-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes collection-open {
+  from {
+    clip-path: inset(0 0 100% 0);
+    opacity: 0.45;
+  }
+  to {
+    clip-path: inset(0);
+    opacity: 1;
+  }
+}
+@keyframes queue-reveal {
+  from {
+    clip-path: inset(0 0 0 100%);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes skeleton-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .collection-view,
+  .queue-drawer,
+  .drawer-backdrop,
+  .skeleton-card::after,
+  .collection-view > *,
+  .queue-content {
+    animation: none;
+  }
+}

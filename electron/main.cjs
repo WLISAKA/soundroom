@@ -109,7 +109,7 @@ function loadWindow(win, mode = "") {
 }
 function secureWindow(options) {
   const win = new BrowserWindow({
-    backgroundColor: store.theme === "nordic" ? "#f5f0eb" : "#f6f7f9",
+    backgroundColor: store.theme === "nordic" ? "#f5f0eb" : "#0b1322",
     icon: path.join(__dirname, "../assets/icon.ico"),
     ...options,
     webPreferences: {
@@ -162,7 +162,7 @@ function toggleAux() {
     minWidth: 500,
     minHeight: 180,
     maxHeight: 260,
-    backgroundColor: store.theme === "nordic" ? "#f5f0eb" : "#101d35",
+    backgroundColor: store.theme === "nordic" ? "#f5f0eb" : "#101b2e",
     frame: false,
     thickFrame: false,
     hasShadow: false,
@@ -366,8 +366,8 @@ else {
             theme === "nordic"
               ? "#f5f0eb"
               : win === mini
-                ? "#101d35"
-                : "#f6f7f9",
+                ? "#101b2e"
+                : "#0b1322",
           ),
         );
         broadcast("theme", theme);

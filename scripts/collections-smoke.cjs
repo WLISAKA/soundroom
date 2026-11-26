@@ -86,9 +86,10 @@ async function main() {
       );
       const fixture = (globalThis.collectionFixture = {
         calls: [],
+        playback: [],
         likes: [],
         configs: {
-          111: { count: 251, name: "251首测试歌单" },
+          111: { count: 251, name: "251首测试歌单", delay: 80 },
           222: { count: 5105, name: "5105首测试歌单" },
           333: { count: 251, name: "失败测试歌单", fail: true },
           444: { count: 2000, name: "取消测试歌单", delay: 300 },
@@ -120,7 +121,27 @@ async function main() {
         return Object.fromEntries(mids.map((mid) => [mid, false]));
       };
       QQProvider.prototype.lyric = async () => [];
-      QQProvider.prototype.playUrl = async () => stream;
+      QQProvider.prototype.playUrl = async (track, quality) => {
+        fixture.playback.push([track.mid, quality]);
+        if (track.mid !== "111-1") return stream;
+        if (quality === "high")
+          return {
+            url: "soundroom://track/missing",
+            quality: "HQ · 320 kbps",
+            qualityLevel: "high",
+          };
+        if (quality === "higher")
+          return {
+            url: "soundroom://track/missing-192",
+            quality: "较高 · 192 kbps",
+            qualityLevel: "higher",
+          };
+        return {
+          ...stream,
+          quality: "标准 · 128 kbps",
+          qualityLevel: "standard",
+        };
+      };
       QQProvider.prototype.collectionPage = async (_kind, id, offset) => {
         const config = fixture.configs[id];
         fixture.calls.push({ id, offset });
@@ -161,6 +182,8 @@ async function main() {
       .waitFor();
     await page.getByRole("button", { name: "关闭对话框", exact: true }).click();
     await openPlaylist(page, "251首测试歌单");
+    await page.locator(".skeleton-card").first().waitFor();
+    assert.equal(await page.locator(".track-row").count(), 0);
     await page
       .locator(".list-toolbar")
       .filter({ hasText: "共 251 首" })
@@ -181,6 +204,24 @@ async function main() {
     assert.deepEqual(firstCalls, [0, 100, 200]);
     await page.getByRole("button", { name: "播放全部", exact: true }).click();
     await waitForPlayback(page, (s) => s.playing && s.track?.mid === "111-1");
+    await waitForPlayback(page, (s) => s.quality === "标准 · 128 kbps");
+    assert.deepEqual(
+      await app.evaluate(() =>
+        globalThis.collectionFixture.playback.slice(0, 3),
+      ),
+      [
+        ["111-1", "high"],
+        ["111-1", "higher"],
+        ["111-1", "standard"],
+      ],
+    );
+    assert.equal(
+      await page.evaluate(
+        async () =>
+          (await window.soundroom.bootstrap()).player.preferredQuality,
+      ),
+      "high",
+    );
     let queue = await queueOf(page, 251);
     assert.equal(queue.at(-1).mid, "111-251");
     await page.locator(".main-content").evaluate((el) => {
@@ -191,6 +232,7 @@ async function main() {
     queue = await queueOf(page, 251);
     assert.equal(queue[0].mid, "111-1");
     await page.getByRole("button", { name: "播放队列", exact: true }).click();
+    await page.locator(".queue-item").first().waitFor();
     await page.locator(".queue-list").evaluate((el) => {
       el.scrollTop = el.scrollHeight;
     });
@@ -283,6 +325,7 @@ async function main() {
             "virtualized songs and queue",
             "failed pages do not queue partial results",
             "retry and navigation cancellation",
+            "playlist skeleton and automatic playback fallback after audio errors",
           ],
           dataDir: runtime,
         },

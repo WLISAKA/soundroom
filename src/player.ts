@@ -2,6 +2,33 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { LyricLine, QualityPreference, SavedPlayer, Track } from "./types";
 
 const api = window.soundroom;
+const lowerTier = {
+  lossless: "high",
+  high: "higher",
+  higher: "standard",
+  standard: undefined,
+} as const;
+
+function waitForAudio(audio: HTMLAudioElement, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const finish = (error?: Error) => {
+      clearTimeout(timeout);
+      audio.removeEventListener("loadedmetadata", ready);
+      audio.removeEventListener("error", failed);
+      signal.removeEventListener("abort", cancelled);
+      if (error) reject(error);
+      else resolve();
+    };
+    const ready = () => finish();
+    const failed = () => finish(new Error("无法读取音频"));
+    const cancelled = () =>
+      finish(new DOMException("已取消播放", "AbortError"));
+    const timeout = setTimeout(failed, 12000);
+    audio.addEventListener("loadedmetadata", ready);
+    audio.addEventListener("error", failed);
+    signal.addEventListener("abort", cancelled);
+  });
+}
 export function usePlayer(notify: (message: string) => void) {
   const audio = useRef<HTMLAudioElement>(new Audio());
   const [queue, setQueue] = useState<Track[]>([]);
@@ -20,6 +47,8 @@ export function usePlayer(notify: (message: string) => void) {
   const [ready, setReady] = useState(false);
   const request = useRef(0);
   const loadedId = useRef("");
+  const loadedTier = useRef<QualityPreference | undefined>(undefined);
+  const playbackAttempt = useRef<AbortController | null>(null);
   const pending = useRef<{ autoPlay: boolean; resume: number } | null>(null);
   const seekOnLoad = useRef(0);
   const latest = useRef({
@@ -41,11 +70,21 @@ export function usePlayer(notify: (message: string) => void) {
     preferredQuality,
   };
   const play = useCallback(
-    async (track: Track, list?: Track[], resume = 0, autoPlay = true) => {
+    async (
+      track: Track,
+      list?: Track[],
+      resume = 0,
+      autoPlay = true,
+      ceiling?: QualityPreference,
+    ) => {
       const token = ++request.current;
+      playbackAttempt.current?.abort();
+      const attempt = new AbortController();
+      playbackAttempt.current = attempt;
       pending.current = { autoPlay, resume };
       audio.current.pause();
       loadedId.current = "";
+      loadedTier.current = undefined;
       audio.current.removeAttribute("src");
       audio.current.load();
       if (list) setQueue([...new Map(list.map((t) => [t.id, t])).values()]);
@@ -54,33 +93,58 @@ export function usePlayer(notify: (message: string) => void) {
       setCurrent(track);
       setPosition(resume);
       setDuration(track.duration || 0);
-      setLines([]);
+      if (!ceiling) setLines([]);
       setLoading(true);
       setQuality("");
       setPlaying(false);
       seekOnLoad.current = resume;
-      api
-        .lyric(track)
-        .then((result) => {
-          if (request.current === token) setLines(result);
-        })
-        .catch(() => {});
+      if (!ceiling)
+        api
+          .lyric(track)
+          .then((result) => {
+            if (request.current === token) setLines(result);
+          })
+          .catch(() => {});
       try {
-        const result = await api.playUrl(
-          track,
-          latest.current.preferredQuality,
-        );
-        if (request.current !== token) return;
-        setQuality(result.quality);
-        audio.current.src = result.url;
-        loadedId.current = track.id;
-        audio.current.load();
-        if (autoPlay) await audio.current.play();
+        let preference: QualityPreference | undefined =
+          ceiling ?? latest.current.preferredQuality;
+        const player = audio.current;
+        while (preference && request.current === token) {
+          const result = await api.playUrl(track, preference);
+          if (request.current !== token) return;
+          const position = pending.current?.resume ?? resume;
+          seekOnLoad.current = position;
+          const metadata = waitForAudio(player, attempt.signal);
+          player.src = result.url;
+          player.load();
+          try {
+            await metadata;
+            if (request.current !== token) return;
+            if (autoPlay) await player.play();
+          } catch (error) {
+            if (request.current !== token) return;
+            player.removeAttribute("src");
+            player.load();
+            preference =
+              track.source !== "local" && result.qualityLevel
+                ? lowerTier[result.qualityLevel]
+                : undefined;
+            if (!preference || (error as Error).name === "NotAllowedError")
+              throw error;
+            continue;
+          }
+          if (request.current !== token) return;
+          loadedId.current = track.id;
+          loadedTier.current = result.qualityLevel;
+          setQuality(result.quality);
+          return;
+        }
       } catch (error) {
         if (request.current === token) notify((error as Error).message);
       } finally {
         if (request.current === token) {
           pending.current = null;
+          playbackAttempt.current = null;
           setLoading(false);
         }
       }
@@ -162,6 +226,10 @@ export function usePlayer(notify: (message: string) => void) {
       ),
     );
     if (loadedId.current) audio.current.currentTime = bounded;
+    else if (pending.current) {
+      pending.current.resume = bounded;
+      seekOnLoad.current = bounded;
+    }
     setPosition(bounded);
   }, []);
   const toggleShuffle = useCallback(() => {
@@ -187,6 +255,7 @@ export function usePlayer(notify: (message: string) => void) {
   const remove = (id: string) => {
     if (latest.current.current?.id === id) {
       ++request.current;
+      playbackAttempt.current?.abort();
       pending.current = null;
       audio.current.pause();
       audio.current.removeAttribute("src");
@@ -202,6 +271,7 @@ export function usePlayer(notify: (message: string) => void) {
   };
   const clear = () => {
     ++request.current;
+    playbackAttempt.current?.abort();
     pending.current = null;
     audio.current.pause();
     audio.current.removeAttribute("src");
@@ -233,12 +303,21 @@ export function usePlayer(notify: (message: string) => void) {
     const onPlay = () => setPlaying(true),
       onPause = () => setPlaying(false);
     const onError = () => {
+      if (pending.current || !a.getAttribute("src")) return;
+      const { current: track, position } = latest.current;
+      const tier = loadedTier.current;
+      const resumePlaying = !a.paused;
+      loadedId.current = "";
+      loadedTier.current = undefined;
+      if (track && tier && lowerTier[tier]) {
+        void play(track, undefined, position, resumePlaying, lowerTier[tier]);
+        return;
+      }
       setPlaying(false);
-      setLoading(false);
-      if (a.getAttribute("src"))
-        notify(
-          "无法播放此资源。在线歌曲请检查账号与地区权限，本地歌曲请检查文件。",
-        );
+      setQuality("");
+      notify(
+        "无法播放此资源。在线歌曲请检查账号与地区权限，本地歌曲请检查文件。",
+      );
     };
     const ended = () => move(1, true);
     a.addEventListener("timeupdate", update);
@@ -255,7 +334,7 @@ export function usePlayer(notify: (message: string) => void) {
       a.removeEventListener("error", onError);
       a.removeEventListener("ended", ended);
     };
-  }, [move, notify]);
+  }, [move, notify, play]);
   useEffect(() => {
     audio.current.volume = volume;
   }, [volume]);

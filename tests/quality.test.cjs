@@ -9,20 +9,53 @@ test("QQ falls back below HQ and never requests a higher tier than the preferenc
   const requests = [];
   provider.rpc = async (_module, _method, { filename: [file] }) => {
     requests.push(file);
-    const purl = file.startsWith("M800") ? "RS01fixture.flac" : file;
+    const purl = /^[MO]800/.test(file) ? "RS01fixture.flac" : file;
     return { midurlinfo: [{ purl }], sip: ["https://example.test/"] };
   };
   assert.equal(
     (await provider.playUrl({ mid: "fixture" })).quality,
     "较高 · 192 kbps",
   );
-  assert.deepEqual(requests, ["M800fixture.mp3", "O600fixture.ogg"]);
+  assert.deepEqual(requests, [
+    "M800fixture.mp3",
+    "O800fixture.ogg",
+    "O600fixture.ogg",
+  ]);
   requests.length = 0;
   assert.equal(
     (await provider.playUrl({ mid: "fixture" }, "standard")).quality,
     "标准 · 128 kbps",
   );
   assert.deepEqual(requests, ["M500fixture.mp3"]);
+});
+
+test("QQ retries rejected tiers and accepts a lower alternate codec with a different CDN filename", async () => {
+  const provider = new QQProvider();
+  provider.auth = async () => ({ uin: "123" });
+  const requests = [];
+  provider.rpc = async (_module, _method, { filename: [file] }) => {
+    requests.push(file);
+    if (file.startsWith("M800"))
+      throw Object.assign(new Error("format unavailable"), {
+        providerCode: 104003,
+      });
+    const purl = file.startsWith("C600")
+      ? "/media/C600serverID.m4a?key=fixture"
+      : "";
+    return { midurlinfo: [{ purl }], sip: ["https://example.test/"] };
+  };
+  const stream = await provider.playUrl({ mid: "fixture" });
+  assert.equal(stream.qualityLevel, "higher");
+  assert.equal(
+    stream.url,
+    "https://example.test/media/C600serverID.m4a?key=fixture",
+  );
+  assert.deepEqual(requests, [
+    "M800fixture.mp3",
+    "O800fixture.ogg",
+    "O600fixture.ogg",
+    "C600fixture.m4a",
+  ]);
 });
 
 test("NetEase picks the nearest lower full stream when the first response downgrades too far", async () => {

@@ -104,7 +104,11 @@ export interface DesktopAPI {
   playUrl(
     track: Track,
     preference?: QualityPreference,
-  ): Promise<{ url: string; quality: string }>;
+  ): Promise<{
+    url: string;
+    quality: string;
+    qualityLevel?: QualityPreference;
+  }>;
   lyric(track: Track): Promise<LyricLine[]>;
   importLocal(): Promise<{ tracks: Track[]; skipped: string[] }>;
   removeLocal(id: string): Promise<Track[]>;

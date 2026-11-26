@@ -67,13 +67,13 @@
   border-radius: 2px;
 }
 .theme-swatch-classic i:nth-child(1) {
-  background: #101d35;
+  background: #16233a;
 }
 .theme-swatch-classic i:nth-child(2) {
-  background: #1461e8;
+  background: #e4b863;
 }
 .theme-swatch-classic i:nth-child(3) {
-  background: #e9ecf1;
+  background: #7c9cc4;
 }
 .theme-swatch-nordic i:nth-child(1) {
   background: #f5f0eb;
@@ -731,6 +731,8 @@
 
 /* Match the album fade to the active window surface. */
 :root[data-theme="nordic"] .aux {
+  --lyric-current: var(--color-moss);
+  --lyric-next: var(--text-secondary);
   background: var(--color-warm-white);
   color: var(--color-charcoal);
 }
@@ -748,16 +750,9 @@
   line-height: 1.4;
 }
 :root[data-theme="nordic"] .mini-meta > span,
-:root[data-theme="nordic"] .mini-lyric-lines > span,
 :root[data-theme="nordic"] .mini-time,
 :root[data-theme="nordic"] .mini-time > i {
   color: var(--text-secondary);
-}
-:root[data-theme="nordic"] .mini-lyric-lines > strong {
-  color: var(--color-moss);
-}
-:root[data-theme="nordic"] .mini-lyric-lines.is-synced {
-  animation: nordic-appear 700ms ease-in-out;
 }
 :root[data-theme="nordic"] .mini-controls > button,
 :root[data-theme="nordic"] .mini-controls > .mini-mode,
